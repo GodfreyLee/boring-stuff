@@ -1,5 +1,5 @@
 const axios = require("axios");
-require('dotenv').config();
+require("dotenv").config();
 
 // OpenAI API configuration
 const openaiApiKey = process.env.OPENAI_API_KEY;
