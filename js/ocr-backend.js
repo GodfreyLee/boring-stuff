@@ -3,6 +3,7 @@ const axios = require("axios");
 const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
+const { processReceipt } = require("./reimburse");
 require("dotenv").config();
 
 const app = express();
@@ -71,6 +72,35 @@ app.post("/ocr/file", upload.single("file"), async (req, res) => {
     const result = await pollResult(opLoc);
     res.json(result);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Receipt validation endpoint - OCR + AI validation
+app.post("/receipt/validate", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  try {
+    const fileData = fs.readFileSync(req.file.path);
+
+    // Process the receipt using the reimburse module
+    const result = await processReceipt(fileData);
+
+    // Clean up uploaded file
+    fs.unlinkSync(req.file.path);
+
+    // Return structured response
+    res.json({
+      isValidReceipt: result.isValid,
+      totalAmount: result.totalAmount,
+      extractedText: result.extractedText,
+      error: result.error || null,
+    });
+  } catch (err) {
+    // Clean up file if it exists
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     res.status(500).json({ error: err.message });
   }
 });
