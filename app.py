@@ -2,6 +2,7 @@ import os
 import json
 import tempfile
 import shutil
+import re
 from flask import Flask, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 from azure.ai.formrecognizer import DocumentAnalysisClient
@@ -9,6 +10,12 @@ from azure.core.credentials import AzureKeyCredential
 import openai
 from dotenv import load_dotenv
 import uuid
+import fitz  # PyMuPDF
+from PIL import Image
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.utils import ImageReader
+import io
 
 # Load environment variables
 load_dotenv()
@@ -36,6 +43,87 @@ openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
 UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+
+# Supported image formats
+SUPPORTED_IMAGE_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif', '.webp'}
+SUPPORTED_PDF_FORMATS = {'.pdf'}
+
+def is_image_file(filename):
+    """
+    Check if the file is a supported image format
+    """
+    return any(filename.lower().endswith(ext) for ext in SUPPORTED_IMAGE_FORMATS)
+
+def is_pdf_file(filename):
+    """
+    Check if the file is a PDF
+    """
+    return filename.lower().endswith('.pdf')
+
+def convert_image_to_pdf(image_path, output_path=None):
+    """
+    Convert an image file to PDF format
+    """
+    try:
+        # Open the image
+        with Image.open(image_path) as img:
+            # Convert to RGB if necessary (for JPEG compatibility)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                img = img.convert('RGB')
+            
+            # Get image dimensions
+            img_width, img_height = img.size
+            
+            # Calculate PDF page size (A4 by default)
+            page_width, page_height = A4
+            
+            # Calculate scaling to fit image on page with margins
+            margin = 50  # 50 points margin
+            max_width = page_width - 2 * margin
+            max_height = page_height - 2 * margin
+            
+            # Calculate scaling factor
+            scale_x = max_width / img_width
+            scale_y = max_height / img_height
+            scale = min(scale_x, scale_y, 1.0)  # Don't scale up, only down
+            
+            # Calculate final dimensions
+            final_width = img_width * scale
+            final_height = img_height * scale
+            
+            # Calculate position to center the image
+            x_offset = (page_width - final_width) / 2
+            y_offset = (page_height - final_height) / 2
+            
+            # Create PDF
+            if output_path is None:
+                output_path = image_path.rsplit('.', 1)[0] + '.pdf'
+            
+            c = canvas.Canvas(output_path, pagesize=A4)
+            
+            # Draw the image
+            c.drawImage(ImageReader(img), x_offset, y_offset, width=final_width, height=final_height)
+            c.save()
+            
+            print(f"Image converted to PDF: {output_path}")
+            return output_path
+            
+    except Exception as e:
+        raise Exception(f"Error converting image to PDF: {str(e)}")
+
+def process_file_to_pdf(file_path, original_filename):
+    """
+    Process a file (image or PDF) and return the path to a PDF file
+    """
+    if is_pdf_file(original_filename):
+        # File is already a PDF, return the path
+        return file_path
+    elif is_image_file(original_filename):
+        # Convert image to PDF
+        pdf_path = file_path.rsplit('.', 1)[0] + '.pdf'
+        return convert_image_to_pdf(file_path, pdf_path)
+    else:
+        raise Exception(f"Unsupported file format. Supported formats: {', '.join(SUPPORTED_IMAGE_FORMATS | SUPPORTED_PDF_FORMATS)}")
 
 def extract_text_from_pdf(pdf_path):
     """
@@ -98,6 +186,276 @@ def generate_filename_with_openai(text_content):
     except Exception as e:
         raise Exception(f"Error generating filename with OpenAI: {str(e)}")
 
+def extract_text_and_coordinates_from_pdf(pdf_path):
+    """
+    Extract text and coordinates from PDF using Azure Form Recognizer
+    Returns a list of dictionaries with text content and coordinates
+    """
+    try:
+        with open(pdf_path, "rb") as f:
+            poller = document_analysis_client.begin_analyze_document(
+                "prebuilt-document", document=f
+            )
+        result = poller.result()
+        
+        # Extract text content with coordinates
+        text_elements = []
+        for page_num, page in enumerate(result.pages):
+            for line in page.lines:
+                for word in line.words:
+                    # Convert coordinates from inches to points (1 inch = 72 points)
+                    # Azure returns coordinates in inches, we need to convert to points for PDF manipulation
+                    x1 = word.polygon[0].x * 72  # Convert to points
+                    y1 = word.polygon[0].y * 72
+                    x2 = word.polygon[2].x * 72
+                    y2 = word.polygon[2].y * 72
+                    
+                    text_elements.append({
+                        'text': word.content,
+                        'page': page_num,
+                        'coordinates': {
+                            'x1': x1,
+                            'y1': y1,
+                            'x2': x2,
+                            'y2': y2,
+                            'width': x2 - x1,
+                            'height': y2 - y1
+                        }
+                    })
+        
+        return text_elements
+    except Exception as e:
+        raise Exception(f"Error extracting text and coordinates from PDF: {str(e)}")
+
+def convert_azure_coordinates_to_rect(coordinates, page_width, page_height):
+    """
+    Convert Azure Document Intelligence coordinates to PyMuPDF rectangle.
+    
+    Azure Document Intelligence returns coordinates in inches, measured from
+    the top-left corner of the page. PyMuPDF uses points (1 inch = 72 points)
+    and measures from the bottom-left corner.
+    """
+    points = []
+    POINTS_PER_INCH = 72
+    
+    # Convert coordinate pairs from inches to points
+    for i in range(0, len(coordinates), 2):
+        if i + 1 < len(coordinates):
+            x = coordinates[i] * POINTS_PER_INCH
+            y = coordinates[i + 1] * POINTS_PER_INCH
+            points.append({'x': x, 'y': y})
+    
+    if len(points) >= 2:
+        # Calculate bounding rectangle from all points
+        x_coords = [p['x'] for p in points]
+        y_coords = [p['y'] for p in points]
+        
+        min_x = min(x_coords)
+        max_x = max(x_coords)
+        min_y = min(y_coords)
+        max_y = max(y_coords)
+        
+        return fitz.Rect(min_x, min_y, max_x, max_y)
+    
+    return fitz.Rect(0, 0, 0, 0)
+
+def find_sensitive_data_from_azure(azure_data, data_types):
+    """
+    Extract sensitive information from Azure Document Intelligence results.
+    Supports data types: 'tfn'
+    """
+    sensitive_data = []
+    
+    # Normalize Azure response format to array
+    results_array = []
+    if isinstance(azure_data, list):
+        results_array = azure_data
+    elif 'analyzeResult' in azure_data:
+        results_array = [azure_data]
+    elif isinstance(azure_data, list) and len(azure_data) > 0 and 'analyzeResult' in azure_data[0]:
+        results_array = azure_data
+    else:
+        print("WARNING: Unexpected Azure results format")
+        return sensitive_data
+    
+    # Process each result in the array
+    for result in results_array:
+        key_value_pairs = result.get('analyzeResult', {}).get('keyValuePairs', [])
+        
+        for pair in key_value_pairs:
+            key_content = pair.get('key', {}).get('content', '').lower()
+            value_content = pair.get('value', {}).get('content', '').strip()
+            
+            # Check for TFN data type only
+            for data_type in data_types:
+                if data_type == 'tfn' and ('tfn' in key_content or 'tax file' in key_content or 'tax number' in key_content or 'tax file number' in key_content):
+                    sensitive_data.append({
+                        'type': 'tfn',
+                        'key': pair.get('key', {}).get('content', ''),
+                        'value': value_content,
+                        'polygon': pair.get('value', {}).get('boundingRegions', [{}])[0].get('polygon', []),
+                        'confidence': pair.get('confidence', 1.0),
+                        'page': pair.get('value', {}).get('boundingRegions', [{}])[0].get('pageNumber', 1) - 1
+                    })
+                    print(f"Found TFN: {pair.get('key', {}).get('content', '')} = {value_content}")
+    
+    return sensitive_data
+
+def extract_sensitive_values(sensitive_data):
+    """
+    Extract the actual sensitive values from the sensitive data objects.
+    """
+    sensitive_values = []
+    
+    for item in sensitive_data:
+        value = item.get('value', '').strip()
+        if value and value not in sensitive_values:
+            sensitive_values.append(value)
+            print(f"Extracted {item['type']} value: {value}")
+    
+    return sensitive_values
+
+def find_sensitive_values_in_azure_words(azure_data, sensitive_values, data_types):
+    """
+    Search for sensitive values in Azure Document Intelligence words array.
+    Returns word-level coordinates for redaction.
+    """
+    additional_redactions = []
+    
+    print(f"Searching Azure words for sensitive values: {sensitive_values}")
+    
+    # Normalize Azure response format to array
+    results_array = []
+    if isinstance(azure_data, list):
+        results_array = azure_data
+    elif 'analyzeResult' in azure_data:
+        results_array = [azure_data]
+    elif isinstance(azure_data, list) and len(azure_data) > 0 and 'analyzeResult' in azure_data[0]:
+        results_array = azure_data
+    else:
+        print("WARNING: Unexpected Azure results format for word search")
+        return additional_redactions
+    
+    # Process each result in the array
+    for result in results_array:
+        pages = result.get('analyzeResult', {}).get('pages', [])
+        
+        for page in pages:
+            page_number = page.get('pageNumber', 1) - 1  # Convert to zero-based
+            words = page.get('words', [])
+            
+            print(f"Searching page {page_number + 1} with {len(words)} words")
+            
+            # Single Word Exact Matching
+            for word in words:
+                word_content = word.get('content', '')
+                word_polygon = word.get('polygon', [])
+                word_confidence = word.get('confidence', 1.0)
+                
+                # Check if this word matches any of our sensitive values
+                for sensitive_value in sensitive_values:
+                    if not sensitive_value:
+                        continue
+                    
+                    # Only exact match to prevent false positives
+                    if word_content == sensitive_value:
+                        print(f"Found sensitive value match: '{word_content}' matches '{sensitive_value}' on page {page_number + 1}")
+                        
+                        additional_redaction = {
+                            'polygon': word_polygon,
+                            'page': page_number,
+                            'confidence': word_confidence,
+                            'source': 'azure_word_search',
+                            'value': word_content,
+                            'matched_value': sensitive_value
+                        }
+                        
+                        additional_redactions.append(additional_redaction)
+            
+            # No pattern matching needed for TFN - handled via key-value pairs only
+    
+    print(f"Found {len(additional_redactions)} additional sensitive value occurrences in Azure words")
+    return additional_redactions
+
+def get_patterns_for_data_type(data_type):
+    """
+    Get regex patterns for different data types.
+    Currently only supports TFN detection via key-value pairs.
+    """
+    patterns = []
+    # TFN detection is handled via key-value pair matching, no patterns needed
+    return patterns
+
+def redact_pdf_secure(pdf_path, redaction_data, output_path):
+    """
+    Perform secure PDF redaction using PyMuPDF.
+    """
+    try:
+        # Open the PDF document
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+        print(f"Opened PDF document with {total_pages} pages")
+        
+        # Process each redaction area
+        for i, redaction in enumerate(redaction_data):
+            print(f"Processing redaction {i+1} of {len(redaction_data)}")
+            
+            page_num = redaction.get('page', 0)
+            polygon = redaction.get('polygon', [])
+            
+            # Validate page number
+            if page_num >= total_pages:
+                print(f"WARNING: Page {page_num} does not exist, skipping redaction")
+                continue
+                
+            # Validate polygon coordinates
+            if len(polygon) < 4:
+                print(f"WARNING: Invalid polygon coordinates (need 4+ values), skipping")
+                continue
+            
+            # Get the target page
+            page = doc[page_num]
+            page_rect = page.rect
+            
+            # Convert Azure coordinates to PDF rectangle
+            redaction_rect = convert_azure_coordinates_to_rect(
+                polygon, page_rect.width, page_rect.height
+            )
+            
+            # Apply redaction if rectangle is valid
+            if not redaction_rect.is_empty:
+                print(f"Applying redaction to area: {redaction_rect}")
+                
+                # Create redaction annotation
+                redact_annot = page.add_redact_annot(
+                    redaction_rect,
+                    text="[REDACTED]",      # Replacement text to display
+                    fill=(0, 0, 0),         # Black background color
+                    text_color=(1, 1, 1)    # White text color for visibility
+                )
+                
+                # Apply the redaction annotation
+                page.apply_redactions()
+                print("Redaction applied successfully")
+            else:
+                print("WARNING: Empty redaction rectangle, skipping")
+        
+        # Save the redacted PDF with optimization
+        doc.save(
+            output_path,
+            garbage=4,          # Remove unused objects
+            deflate=True,       # Compress content streams
+            clean=True          # Clean up document structure
+        )
+        doc.close()
+        
+        print(f"Redacted PDF saved successfully to: {output_path}")
+        return True
+        
+    except Exception as e:
+        print(f"ERROR during PDF redaction: {str(e)}")
+        return False
+
 @app.route('/rename-document', methods=['POST'])
 def rename_document():
     """
@@ -114,19 +472,17 @@ def rename_document():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
         
-        # Check file type
-        if not file.filename.lower().endswith('.pdf'):
-            return jsonify({'error': 'Only PDF files are supported'}), 400
-        
-        # Save uploaded file temporarily
+        # Process the file to ensure it's a PDF
         original_filename = secure_filename(file.filename)
         temp_path = os.path.join(UPLOAD_FOLDER, f"temp_{uuid.uuid4()}_{original_filename}")
         file.save(temp_path)
         
         try:
+            processed_pdf_path = process_file_to_pdf(temp_path, original_filename)
+            
             # Step 1: Extract text from PDF using Azure OCR
             print("Extracting text from PDF...")
-            extracted_text = extract_text_from_pdf(temp_path)
+            extracted_text = extract_text_from_pdf(processed_pdf_path)
             
             if not extracted_text:
                 return jsonify({'error': 'No text could be extracted from the PDF'}), 400
@@ -145,7 +501,7 @@ def rename_document():
                 counter += 1
             
             # Rename the file
-            shutil.move(temp_path, new_file_path)
+            shutil.move(processed_pdf_path, new_file_path)
             
             # Step 4: Return the renamed file
             return send_file(
@@ -164,12 +520,490 @@ def rename_document():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/health', methods=['GET'])
-def health_check():
+@app.route('/redact-document', methods=['POST'])
+def redact_document():
     """
-    Health check endpoint
+    Redact sensitive information from PDF documents or images using Azure OCR and PyMuPDF.
+    Supports multiple data types: 'tfn', 'phone', 'email', 'address', 'ssn', 'credit_card'
     """
-    return jsonify({'status': 'healthy', 'message': 'Document renaming API is running'})
+    try:
+        # Check if file is present in request
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Get redaction types from request parameters
+        redaction_types = request.form.get('redaction_types', 'tfn').split(',')
+        redaction_types = [rt.strip().lower() for rt in redaction_types if rt.strip()]
+        
+        # Validate redaction types
+        valid_types = ['tfn']
+        invalid_types = [rt for rt in redaction_types if rt not in valid_types]
+        if invalid_types:
+            return jsonify({'error': f'Invalid redaction types: {invalid_types}. Valid types are: {valid_types}'}), 400
+        
+        # Process the file to ensure it's a PDF
+        original_filename = secure_filename(file.filename)
+        temp_path = os.path.join(UPLOAD_FOLDER, f"temp_{uuid.uuid4()}_{original_filename}")
+        file.save(temp_path)
+        
+        try:
+            processed_pdf_path = process_file_to_pdf(temp_path, original_filename)
+            
+            # Step 1: Extract text and coordinates from PDF using Azure OCR
+            print(f"Extracting text and coordinates from PDF for redaction types: {redaction_types}...")
+            with open(processed_pdf_path, "rb") as f:
+                poller = document_analysis_client.begin_analyze_document(
+                    "prebuilt-document", document=f
+                )
+            result = poller.result()
+            
+            # Convert Azure result to the format expected by our functions
+            azure_data = {
+                'analyzeResult': {
+                    'pages': [],
+                    'keyValuePairs': []
+                }
+            }
+            
+            # Extract pages and words
+            for page_num, page in enumerate(result.pages):
+                page_data = {
+                    'pageNumber': page_num + 1,
+                    'lines': [],
+                    'words': []
+                }
+                
+                # Extract lines
+                for line in page.lines:
+                    line_data = {
+                        'content': line.content,
+                        'polygon': [
+                            line.polygon[0].x, line.polygon[0].y,
+                            line.polygon[1].x, line.polygon[1].y,
+                            line.polygon[2].x, line.polygon[2].y,
+                            line.polygon[3].x, line.polygon[3].y
+                        ],
+                        'confidence': 1.0
+                    }
+                    page_data['lines'].append(line_data)
+                
+                # Extract words directly from the page
+                for word in page.words:
+                    word_data = {
+                        'content': word.content,
+                        'polygon': [
+                            word.polygon[0].x, word.polygon[0].y,
+                            word.polygon[1].x, word.polygon[1].y,
+                            word.polygon[2].x, word.polygon[2].y,
+                            word.polygon[3].x, word.polygon[3].y
+                        ],
+                        'confidence': 1.0
+                    }
+                    page_data['words'].append(word_data)
+                
+                azure_data['analyzeResult']['pages'].append(page_data)
+            
+            # Extract key-value pairs if available
+            if hasattr(result, 'key_value_pairs'):
+                for pair in result.key_value_pairs:
+                    key_content = pair.key.content if pair.key else ""
+                    value_content = pair.value.content if pair.value else ""
+                    
+                    if pair.value and pair.value.bounding_regions:
+                        kv_pair = {
+                            'confidence': 1.0,
+                            'key': {
+                                'content': key_content
+                            },
+                            'value': {
+                                'content': value_content,
+                                'boundingRegions': [{
+                                    'pageNumber': pair.value.bounding_regions[0].page_number,
+                                    'polygon': [
+                                        pair.value.bounding_regions[0].polygon[0].x,
+                                        pair.value.bounding_regions[0].polygon[0].y,
+                                        pair.value.bounding_regions[0].polygon[1].x,
+                                        pair.value.bounding_regions[0].polygon[1].y,
+                                        pair.value.bounding_regions[0].polygon[2].x,
+                                        pair.value.bounding_regions[0].polygon[2].y,
+                                        pair.value.bounding_regions[0].polygon[3].x,
+                                        pair.value.bounding_regions[0].polygon[3].y
+                                    ]
+                                }]
+                            }
+                        }
+                        azure_data['analyzeResult']['keyValuePairs'].append(kv_pair)
+            
+            # Step 2: Find sensitive information from Azure results
+            print(f"Finding sensitive data of types: {redaction_types}...")
+            sensitive_data = find_sensitive_data_from_azure(azure_data, redaction_types)
+            
+            if not sensitive_data:
+                return jsonify({'message': f'No sensitive data of types {redaction_types} found in the document', 'redacted_file': None}), 200
+            
+            print(f"Found {len(sensitive_data)} sensitive data fields to redact")
+            
+            # Step 3: Extract sensitive values and search for additional occurrences
+            sensitive_values = extract_sensitive_values(sensitive_data)
+            additional_redactions = find_sensitive_values_in_azure_words(azure_data, sensitive_values, redaction_types)
+            
+            # Step 4: Combine key-value pair coordinates and word-level coordinates for redaction
+            all_redactions = []
+            
+            # Add key-value pair coordinates
+            for sensitive_item in sensitive_data:
+                polygon = sensitive_item.get('polygon', [])
+                if polygon:  # Only add if polygon exists
+                    all_redactions.append({
+                        'polygon': polygon,
+                        'page': sensitive_item.get('page', 0),
+                        'confidence': sensitive_item.get('confidence', 1.0),
+                        'source': 'azure_key_value_pair',
+                        'value': sensitive_item.get('value', ''),
+                        'matched_value': sensitive_item.get('value', '')
+                    })
+            
+            # Add word-level coordinates
+            all_redactions.extend(additional_redactions)
+            
+            print(f"Total redactions to apply: {len(all_redactions)} ({len(sensitive_data)} from key-value pairs, {len(additional_redactions)} from word matching)")
+            
+            if not all_redactions:
+                return jsonify({'message': f'No sensitive data of types {redaction_types} found in document words', 'redacted_file': None}), 200
+            
+            # Step 5: Perform secure redaction
+            redacted_pdf_path = processed_pdf_path.replace('.pdf', '_redacted.pdf')
+            redaction_success = redact_pdf_secure(processed_pdf_path, all_redactions, redacted_pdf_path)
+            
+            if redaction_success:
+                # Step 6: Return the redacted file
+                return send_file(
+                    redacted_pdf_path,
+                    as_attachment=True,
+                    download_name=f"redacted_{original_filename.rsplit('.', 1)[0]}.pdf",
+                    mimetype='application/pdf'
+                )
+            else:
+                return jsonify({'error': 'Redaction process failed'}), 500
+            
+        except Exception as e:
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise e
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/extract-ocr', methods=['POST'])
+def extract_ocr():
+    """
+    Extract Azure OCR data from PDF or image and return as JSON for inspection
+    """
+    try:
+        # Check if file is present in request
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Process the file to ensure it's a PDF
+        original_filename = secure_filename(file.filename)
+        temp_path = os.path.join(UPLOAD_FOLDER, f"temp_{uuid.uuid4()}_{original_filename}")
+        file.save(temp_path)
+        
+        try:
+            processed_pdf_path = process_file_to_pdf(temp_path, original_filename)
+            
+            # Extract text and coordinates from PDF using Azure OCR
+            print("Extracting OCR data from PDF...")
+            with open(processed_pdf_path, "rb") as f:
+                poller = document_analysis_client.begin_analyze_document(
+                    "prebuilt-document", document=f
+                )
+            result = poller.result()
+            
+            # Convert Azure result to JSON format
+            ocr_data = {
+                'analyzeResult': {
+                    'pages': [],
+                    'keyValuePairs': []
+                }
+            }
+            
+            # Extract pages, lines, and words
+            for page_num, page in enumerate(result.pages):
+                page_data = {
+                    'pageNumber': page_num + 1,
+                    'lines': [],
+                    'words': []
+                }
+                
+                # Extract lines
+                for line in page.lines:
+                    line_data = {
+                        'content': line.content,
+                        'polygon': [
+                            line.polygon[0].x, line.polygon[0].y,
+                            line.polygon[1].x, line.polygon[1].y,
+                            line.polygon[2].x, line.polygon[2].y,
+                            line.polygon[3].x, line.polygon[3].y
+                        ],
+                        'confidence': 1.0
+                    }
+                    page_data['lines'].append(line_data)
+                
+                # Extract words directly from the page
+                for word in page.words:
+                    word_data = {
+                        'content': word.content,
+                        'polygon': [
+                            word.polygon[0].x, word.polygon[0].y,
+                            word.polygon[1].x, word.polygon[1].y,
+                            word.polygon[2].x, word.polygon[2].y,
+                            word.polygon[3].x, word.polygon[3].y
+                        ],
+                        'confidence': 1.0
+                    }
+                    page_data['words'].append(word_data)
+                
+                ocr_data['analyzeResult']['pages'].append(page_data)
+            
+            # Extract key-value pairs if available
+            if hasattr(result, 'key_value_pairs'):
+                for pair in result.key_value_pairs:
+                    key_content = pair.key.content if pair.key else ""
+                    value_content = pair.value.content if pair.value else ""
+                    
+                    if pair.value and pair.value.bounding_regions:
+                        kv_pair = {
+                            'confidence': 1.0,
+                            'key': {
+                                'content': key_content
+                            },
+                            'value': {
+                                'content': value_content,
+                                'boundingRegions': [{
+                                    'pageNumber': pair.value.bounding_regions[0].page_number,
+                                    'polygon': [
+                                        pair.value.bounding_regions[0].polygon[0].x,
+                                        pair.value.bounding_regions[0].polygon[0].y,
+                                        pair.value.bounding_regions[0].polygon[1].x,
+                                        pair.value.bounding_regions[0].polygon[1].y,
+                                        pair.value.bounding_regions[0].polygon[2].x,
+                                        pair.value.bounding_regions[0].polygon[2].y,
+                                        pair.value.bounding_regions[0].polygon[3].x,
+                                        pair.value.bounding_regions[0].polygon[3].y
+                                    ]
+                                }]
+                            }
+                        }
+                        ocr_data['analyzeResult']['keyValuePairs'].append(kv_pair)
+            
+            # Clean up temp files
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            if processed_pdf_path != temp_path and os.path.exists(processed_pdf_path):
+                os.remove(processed_pdf_path)
+            
+            return jsonify(ocr_data)
+            
+        except Exception as e:
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise e
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/debug-tfn-coordinates', methods=['POST'])
+def debug_sensitive_coordinates():
+    """
+    Debug endpoint to test find_sensitive_values_in_azure_words function
+    Returns the coordinates found for sensitive values
+    """
+    try:
+        # Check if file is present in request
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Process the file to ensure it's a PDF
+        original_filename = secure_filename(file.filename)
+        temp_path = os.path.join(UPLOAD_FOLDER, f"temp_{uuid.uuid4()}_{original_filename}")
+        file.save(temp_path)
+        
+        try:
+            processed_pdf_path = process_file_to_pdf(temp_path, original_filename)
+            
+            # Get redaction types from request parameters (default to 'tfn' for backward compatibility)
+            redaction_types = request.form.get('redaction_types', 'tfn').split(',')
+            redaction_types = [rt.strip().lower() for rt in redaction_types if rt.strip()]
+            
+            # Validate redaction types
+            valid_types = ['tfn']
+            invalid_types = [rt for rt in redaction_types if rt not in valid_types]
+            if invalid_types:
+                return jsonify({'error': f'Invalid redaction types: {invalid_types}. Valid types are: {valid_types}'}), 400
+            
+            # Extract text and coordinates from PDF using Azure OCR
+            print(f"Extracting OCR data for sensitive coordinate debugging (types: {redaction_types})...")
+            with open(processed_pdf_path, "rb") as f:
+                poller = document_analysis_client.begin_analyze_document(
+                    "prebuilt-document", 
+                    document=f
+                )
+            result = poller.result()
+            
+            # Debug: Check how many pages Azure returned
+            print(f"Azure OCR returned {len(result.pages)} pages")
+            
+            # Also check if there are any other page-related attributes
+            if hasattr(result, 'pages'):
+                print(f"Total pages in result: {len(result.pages)}")
+                for i, page in enumerate(result.pages):
+                    print(f"  Page {i+1}: {len(page.words)} words, {len(page.lines)} lines")
+            
+            # Convert Azure result to the format expected by our functions
+            azure_data = {
+                'analyzeResult': {
+                    'pages': [],
+                    'keyValuePairs': []
+                }
+            }
+            
+            # Extract pages and words
+            for page_num, page in enumerate(result.pages):
+                print(f"Processing page {page_num + 1} with {len(page.words)} words")
+                page_data = {
+                    'pageNumber': page_num + 1,
+                    'words': []
+                }
+                
+                # Extract words directly from the page
+                for word in page.words:
+                    word_data = {
+                        'content': word.content,
+                        'polygon': [
+                            word.polygon[0].x, word.polygon[0].y,
+                            word.polygon[1].x, word.polygon[1].y,
+                            word.polygon[2].x, word.polygon[2].y,
+                            word.polygon[3].x, word.polygon[3].y
+                        ],
+                        'confidence': 1.0
+                    }
+                    page_data['words'].append(word_data)
+                
+                azure_data['analyzeResult']['pages'].append(page_data)
+            
+            # Extract key-value pairs if available
+            if hasattr(result, 'key_value_pairs'):
+                print(f"Found {len(result.key_value_pairs)} key-value pairs")
+                for pair in result.key_value_pairs:
+                    key_content = pair.key.content if pair.key else ""
+                    value_content = pair.value.content if pair.value else ""
+                    
+                    if pair.value and pair.value.bounding_regions:
+                        kv_pair = {
+                            'confidence': 1.0,
+                            'key': {
+                                'content': key_content
+                            },
+                            'value': {
+                                'content': value_content,
+                                'boundingRegions': [{
+                                    'pageNumber': pair.value.bounding_regions[0].page_number,
+                                    'polygon': [
+                                        pair.value.bounding_regions[0].polygon[0].x,
+                                        pair.value.bounding_regions[0].polygon[0].y,
+                                        pair.value.bounding_regions[0].polygon[1].x,
+                                        pair.value.bounding_regions[0].polygon[1].y,
+                                        pair.value.bounding_regions[0].polygon[2].x,
+                                        pair.value.bounding_regions[0].polygon[2].y,
+                                        pair.value.bounding_regions[0].polygon[3].x,
+                                        pair.value.bounding_regions[0].polygon[3].y
+                                    ]
+                                }]
+                            }
+                        }
+                        azure_data['analyzeResult']['keyValuePairs'].append(kv_pair)
+            
+            # Find sensitive information from Azure results
+            print(f"Finding sensitive data of types {redaction_types} for debugging...")
+            sensitive_data = find_sensitive_data_from_azure(azure_data, redaction_types)
+            
+            if not sensitive_data:
+                return jsonify({
+                    'message': f'No sensitive data of types {redaction_types} found in the document',
+                    'sensitive_data': [],
+                    'sensitive_values': [],
+                    'word_coordinates': [],
+                    'azure_data_structure': {
+                        'total_pages': len(azure_data['analyzeResult']['pages']),
+                        'total_words': sum(len(page['words']) for page in azure_data['analyzeResult']['pages']),
+                        'total_key_value_pairs': len(azure_data['analyzeResult']['keyValuePairs'])
+                    }
+                }), 200
+            
+            print(f"Found {len(sensitive_data)} sensitive data fields")
+            
+            # Extract sensitive values and search for additional occurrences
+            sensitive_values = extract_sensitive_values(sensitive_data)
+            additional_redactions = find_sensitive_values_in_azure_words(azure_data, sensitive_values, redaction_types)
+            
+            # Prepare debug response
+            debug_response = {
+                'sensitive_data_found': sensitive_data,
+                'sensitive_values_extracted': sensitive_values,
+                'word_coordinates_found': additional_redactions,
+                'total_redactions': len(additional_redactions),
+                'redaction_types_requested': redaction_types,
+                'azure_data_structure': {
+                    'total_pages': len(azure_data['analyzeResult']['pages']),
+                    'total_words': sum(len(page['words']) for page in azure_data['analyzeResult']['pages']),
+                    'total_key_value_pairs': len(azure_data['analyzeResult']['keyValuePairs']),
+                    'pages_detail': [
+                        {
+                            'page_number': page['pageNumber'],
+                            'word_count': len(page['words'])
+                        } for page in azure_data['analyzeResult']['pages']
+                    ]
+                }
+            }
+            
+            # Clean up temp files
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            if processed_pdf_path != temp_path and os.path.exists(processed_pdf_path):
+                os.remove(processed_pdf_path)
+            
+            return jsonify(debug_response)
+            
+        except Exception as e:
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise e
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/', methods=['GET'])
 def index():
@@ -177,12 +1011,30 @@ def index():
     API information endpoint
     """
     return jsonify({
-        'message': 'Document Renaming API',
+        'message': 'Document Processing API',
         'endpoints': {
-            'POST /rename-document': 'Upload a PDF file to get it renamed based on content',
-            'GET /health': 'Health check endpoint'
+            'POST /rename-document': 'Upload a PDF or image file to get it renamed based on content',
+            'POST /redact-document': 'Upload a PDF or image file to redact TFN information',
+            'POST /extract-ocr': 'Upload a PDF or image file to get Azure OCR JSON data',
+            'POST /debug-tfn-coordinates': 'Debug endpoint to test TFN coordinate detection'
         },
-        'usage': 'Send a POST request to /rename-document with a PDF file in the "file" field'
+        'usage': {
+            'rename': 'Send a POST request to /rename-document with a PDF or image file in the "file" field',
+            'redact': 'Send a POST request to /redact-document with a PDF or image file in the "file" field (only TFN redaction supported)',
+            'ocr': 'Send a POST request to /extract-ocr with a PDF or image file in the "file" field',
+            'debug': 'Send a POST request to /debug-tfn-coordinates with a PDF or image file in the "file" field'
+        },
+        'supported_formats': {
+            'pdf': 'PDF documents',
+            'images': 'JPG, JPEG, PNG, BMP, TIFF, TIF, GIF, WEBP'
+        },
+        'redaction_types': {
+            'tfn': 'Tax File Number'
+        },
+        'examples': {
+            'redact_pdf': 'curl -X POST -F "file=@document.pdf" http://localhost:5000/redact-document',
+            'redact_image': 'curl -X POST -F "file=@image.jpg" http://localhost:5000/redact-document'
+        }
     })
 
 if __name__ == '__main__':

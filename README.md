@@ -1,12 +1,20 @@
-# Document Renaming API
+# Document Processing API
 
-A Flask-based API that automatically renames PDF documents based on their content using Azure OCR and OpenAI.
+A Flask-based API that automatically renames PDF documents and redacts sensitive information based on their content using Azure OCR and OpenAI. **Now supports image files (JPG, PNG, BMP, TIFF, GIF, WEBP) with automatic conversion to PDF.**
 
 ## Features
 
 - **PDF Text Extraction**: Uses Azure Form Recognizer (OCR) to extract text from PDF documents
+- **Image to PDF Conversion**: Automatically converts supported image formats to PDF for processing
 - **AI-Powered Renaming**: Leverages OpenAI GPT to understand document context and generate descriptive filenames
-- **File Management**: Handles file uploads, processing, and returns renamed files
+- **Flexible Sensitive Data Redaction**: Automatically detects and redacts multiple types of sensitive information:
+  - Tax File Numbers (TFN)
+  - Phone numbers (various formats)
+  - Email addresses
+  - Street addresses
+  - Social Security Numbers (SSN)
+  - Credit card numbers
+- **File Management**: Handles file uploads, processing, and returns processed files
 - **Error Handling**: Comprehensive error handling and validation
 
 ## Prerequisites
@@ -55,21 +63,69 @@ The API will be available at `http://localhost:5000`
 #### 1. Rename Document
 **POST** `/rename-document`
 
-Upload a PDF file to get it renamed based on its content.
+Upload a PDF or image file to get it renamed based on its content.
 
 **Request:**
 - Content-Type: `multipart/form-data`
-- Body: Form data with `file` field containing the PDF
+- Body: Form data with `file` field containing the PDF or image
+
+**Supported Formats:**
+- **PDF**: `.pdf`
+- **Images**: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.tif`, `.gif`, `.webp`
 
 **Response:**
 - Returns the renamed PDF file as a download
 
-**Example using curl:**
-```bash
-curl -X POST -F "file=@document.pdf" http://localhost:5000/rename-document -o renamed_document.pdf
-```
+#### 2. Redact Document
+**POST** `/redact-document`
 
-#### 2. Health Check
+Upload a PDF or image file to redact sensitive information from the document.
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Body: Form data with:
+  - `file` field containing the PDF or image
+  - `redaction_types` field (optional) - comma-separated list of data types to redact
+
+**Supported Redaction Types:**
+- `tfn` - Tax File Numbers
+- `phone` - Phone numbers (various formats)
+- `email` - Email addresses
+- `address` - Street addresses
+- `ssn` - Social Security Numbers
+- `credit_card` - Credit card numbers
+
+**Response:**
+- Returns the redacted PDF file as a download
+- If no sensitive data is found, returns a message indicating no redaction was needed
+
+#### 3. Extract OCR Data
+**POST** `/extract-ocr`
+
+Upload a PDF or image file to get Azure OCR JSON data for inspection.
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Body: Form data with `file` field containing the PDF or image
+
+**Response:**
+- Returns the raw Azure OCR JSON data
+
+#### 4. Debug Sensitive Coordinates
+**POST** `/debug-tfn-coordinates`
+
+Debug endpoint to test sensitive data coordinate detection.
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Body: Form data with:
+  - `file` field containing the PDF or image
+  - `redaction_types` field (optional) - comma-separated list of data types to debug
+
+**Response:**
+- Returns detailed information about detected sensitive data and coordinates
+
+#### 5. Health Check
 **GET** `/health`
 
 Check if the API is running properly.
@@ -82,25 +138,362 @@ Check if the API is running properly.
 }
 ```
 
-#### 3. API Information
+#### 6. API Information
 **GET** `/`
 
 Get information about available endpoints.
 
+## Testing with Postman
+
+### Setting Up Postman
+
+1. **Open Postman** and create a new collection called "Document Processing API"
+
+2. **Set up Environment Variables** (optional but recommended):
+   - Click on the "Environments" tab
+   - Create a new environment called "Local Development"
+   - Add variables:
+     - `base_url`: `http://localhost:5000`
+     - `file_path`: Path to your test PDF or image file
+
+### Testing Redaction Endpoints
+
+#### 1. Test TFN Redaction Only
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/redact-document`
+- **Headers**: None (Postman will automatically set Content-Type for form-data)
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your PDF or image file
+- Key: `redaction_types` (Type: Text)
+  - Value: `tfn`
+
+**Steps:**
+1. Click on the "Body" tab
+2. Select "form-data"
+3. Add the `file` key and select your PDF or image file
+4. Add the `redaction_types` key with value `tfn`
+5. Click "Send"
+
+#### 2. Test Multiple Data Types Redaction
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/redact-document`
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your PDF or image file
+- Key: `redaction_types` (Type: Text)
+  - Value: `tfn,phone,email`
+
+#### 3. Test All Data Types Redaction
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/redact-document`
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your PDF or image file
+- Key: `redaction_types` (Type: Text)
+  - Value: `tfn,phone,email,address,ssn,credit_card`
+
+### Testing Image Processing
+
+#### 1. Test Image Redaction
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/redact-document`
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your image file (JPG, PNG, etc.)
+- Key: `redaction_types` (Type: Text)
+  - Value: `phone,email`
+
+**Expected Result:**
+- Image will be automatically converted to PDF
+- Sensitive data will be redacted
+- Redacted PDF will be returned
+
+#### 2. Test Image OCR Extraction
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/extract-ocr`
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your image file
+
+**Expected Result:**
+- Image will be converted to PDF
+- OCR data will be extracted and returned as JSON
+
+### Testing Debug Endpoint
+
+#### 1. Debug TFN Coordinates
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/debug-tfn-coordinates`
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your PDF or image file
+- Key: `redaction_types` (Type: Text)
+  - Value: `tfn`
+
+**Expected Response:**
+```json
+{
+  "sensitive_data_found": [
+    {
+      "type": "tfn",
+      "key": "TFN",
+      "value": "832431540",
+      "polygon": [x1, y1, x2, y2, x3, y3, x4, y4],
+      "confidence": 1.0,
+      "page": 0
+    }
+  ],
+  "sensitive_values_extracted": ["832431540"],
+  "word_coordinates_found": [...],
+  "total_redactions": 4,
+  "redaction_types_requested": ["tfn"],
+  "azure_data_structure": {
+    "total_pages": 2,
+    "total_words": 289,
+    "total_key_value_pairs": 36
+  }
+}
+```
+
+#### 2. Debug Multiple Data Types
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/debug-tfn-coordinates`
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your PDF or image file
+- Key: `redaction_types` (Type: Text)
+  - Value: `phone,email`
+
+### Testing Other Endpoints
+
+#### 1. Health Check
+
+**Request Setup:**
+- **Method**: `GET`
+- **URL**: `{{base_url}}/health`
+
+#### 2. API Information
+
+**Request Setup:**
+- **Method**: `GET`
+- **URL**: `{{base_url}}/`
+
+#### 3. Extract OCR Data
+
+**Request Setup:**
+- **Method**: `POST`
+- **URL**: `{{base_url}}/extract-ocr`
+
+**Body (form-data):**
+- Key: `file` (Type: File)
+  - Value: Select your PDF or image file
+
+### Postman Collection Example
+
+Here's a sample Postman collection you can import:
+
+```json
+{
+  "info": {
+    "name": "Document Processing API",
+    "description": "API for document renaming and sensitive data redaction"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:5000/health"
+      }
+    },
+    {
+      "name": "API Information",
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:5000/"
+      }
+    },
+    {
+      "name": "Redact TFN Only",
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:5000/redact-document",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "redaction_types",
+              "value": "tfn",
+              "type": "text"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Redact Multiple Types",
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:5000/redact-document",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "redaction_types",
+              "value": "tfn,phone,email",
+              "type": "text"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Redact Image",
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:5000/redact-document",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "redaction_types",
+              "value": "phone,email",
+              "type": "text"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Debug Sensitive Coordinates",
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:5000/debug-tfn-coordinates",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "redaction_types",
+              "value": "tfn,phone,email",
+              "type": "text"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+```
+
+### Common Testing Scenarios
+
+#### 1. Test with Different File Types
+- **PDF documents** (should work as before)
+- **JPG images** (should be converted to PDF and processed)
+- **PNG images** (should be converted to PDF and processed)
+- **Other image formats** (BMP, TIFF, GIF, WEBP)
+
+#### 2. Test with Different Content Types
+- **Tax documents** (should find TFNs)
+- **Contact forms** (should find phone numbers and emails)
+- **Financial documents** (should find credit card numbers)
+- **Personal information forms** (should find addresses and SSNs)
+
+#### 3. Test Error Cases
+- **No file provided**: Send request without file
+- **Invalid file type**: Upload unsupported file format
+- **Invalid redaction types**: Use unsupported data types
+- **Large files**: Test with files > 16MB
+
+#### 4. Test Response Handling
+- **Successful redaction**: Check if redacted PDF is returned
+- **No sensitive data found**: Verify appropriate message
+- **Error responses**: Check error message format
+
+### Tips for Postman Testing
+
+1. **Save Responses**: Use Postman's "Save Response" feature to keep examples
+2. **Use Environment Variables**: Set up variables for base URL and file paths
+3. **Test Different Scenarios**: Create multiple requests for different data types
+4. **Check Headers**: Verify Content-Type is set correctly for form-data
+5. **Monitor Console**: Check the Flask server console for detailed logs
+
 ## How It Works
 
-1. **File Upload**: The API accepts PDF files through a multipart form upload
-2. **Text Extraction**: Azure Form Recognizer extracts text content from the PDF
-3. **AI Analysis**: OpenAI GPT analyzes the extracted text to understand the document's context
-4. **Filename Generation**: Based on the analysis, a descriptive filename is generated
-5. **File Renaming**: The original file is renamed with the new descriptive name
-6. **File Return**: The renamed file is returned to the user
+### Document Renaming
+1. **Upload**: PDF or image file is uploaded to the API
+2. **Conversion**: If image, convert to PDF using PIL and ReportLab
+3. **OCR**: Azure Form Recognizer extracts text from the PDF
+4. **AI Analysis**: OpenAI analyzes the text to understand context
+5. **Renaming**: A descriptive filename is generated and applied
+6. **Return**: The renamed file is returned to the user
+
+### Document Redaction
+1. **Upload**: PDF or image file is uploaded to the API
+2. **Conversion**: If image, convert to PDF using PIL and ReportLab
+3. **OCR with Coordinates**: Azure Form Recognizer extracts text and coordinates from the PDF
+4. **Sensitive Data Detection**: The system searches for specified types of sensitive data
+5. **Pattern Matching**: Uses regex patterns to find sensitive data in text
+6. **Coordinate Conversion**: Coordinates are converted from inches to PDF points
+7. **Redaction**: Black rectangles are drawn over detected sensitive data
+8. **Return**: The redacted PDF file is returned to the user
+
+### Image to PDF Conversion
+1. **Image Processing**: Open image using PIL (Python Imaging Library)
+2. **Format Conversion**: Convert to RGB if necessary for compatibility
+3. **Scaling**: Calculate optimal scaling to fit image on A4 page with margins
+4. **PDF Creation**: Use ReportLab to create PDF with centered image
+5. **Quality Preservation**: Maintain image quality while ensuring proper fit
 
 ## Error Handling
 
 The API includes comprehensive error handling for:
 - Missing or invalid files
-- Unsupported file types (non-PDF)
+- Unsupported file types
+- Invalid redaction types
+- Image conversion errors
 - Azure OCR service errors
 - OpenAI API errors
 - File system errors
@@ -108,7 +501,7 @@ The API includes comprehensive error handling for:
 ## File Size Limits
 
 - Maximum file size: 16MB
-- Supported format: PDF only
+- Supported formats: PDF and images (JPG, JPEG, PNG, BMP, TIFF, TIF, GIF, WEBP)
 
 ## Security Considerations
 
@@ -116,6 +509,7 @@ The API includes comprehensive error handling for:
 - Temporary files are cleaned up after processing
 - Filenames are sanitized to prevent security issues
 - Environment variables are used for sensitive credentials
+- Image conversion is done securely with proper error handling
 
 ## Development
 
@@ -125,24 +519,3 @@ python app.py
 ```
 
 The server will run with debug mode enabled and reload on code changes.
-
-## Production Deployment
-
-For production deployment, consider:
-- Using a production WSGI server (e.g., Gunicorn)
-- Setting up proper logging
-- Implementing rate limiting
-- Adding authentication if needed
-- Using HTTPS
-- Setting up proper file storage (e.g., cloud storage)
-
-## Troubleshooting
-
-1. **Azure Credentials Error**: Ensure your Azure Form Recognizer endpoint and key are correct
-2. **OpenAI API Error**: Verify your OpenAI API key is valid and has sufficient credits
-3. **File Upload Issues**: Check file size and format (PDF only)
-4. **Permission Errors**: Ensure the `uploads` directory is writable
-
-## License
-
-This project is open source and available under the MIT License.

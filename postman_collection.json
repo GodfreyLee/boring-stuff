@@ -1,0 +1,333 @@
+{
+  "info": {
+    "name": "Document Processing API",
+    "description": "API for document renaming and sensitive data redaction using Azure OCR and OpenAI",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/health",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["health"]
+        },
+        "description": "Check if the API is running properly"
+      },
+      "response": []
+    },
+    {
+      "name": "API Information",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:5000/",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": [""]
+        },
+        "description": "Get information about available endpoints"
+      },
+      "response": []
+    },
+    {
+      "name": "Redact TFN Only",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to redact"
+            },
+            {
+              "key": "redaction_types",
+              "value": "tfn",
+              "type": "text",
+              "description": "Comma-separated list of data types to redact"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/redact-document",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["redact-document"]
+        },
+        "description": "Redact only Tax File Numbers (TFN) from the document"
+      },
+      "response": []
+    },
+    {
+      "name": "Redact Phone Numbers",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to redact"
+            },
+            {
+              "key": "redaction_types",
+              "value": "phone",
+              "type": "text",
+              "description": "Comma-separated list of data types to redact"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/redact-document",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["redact-document"]
+        },
+        "description": "Redact only phone numbers from the document"
+      },
+      "response": []
+    },
+    {
+      "name": "Redact Email Addresses",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to redact"
+            },
+            {
+              "key": "redaction_types",
+              "value": "email",
+              "type": "text",
+              "description": "Comma-separated list of data types to redact"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/redact-document",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["redact-document"]
+        },
+        "description": "Redact only email addresses from the document"
+      },
+      "response": []
+    },
+    {
+      "name": "Redact Multiple Types",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to redact"
+            },
+            {
+              "key": "redaction_types",
+              "value": "tfn,phone,email",
+              "type": "text",
+              "description": "Comma-separated list of data types to redact"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/redact-document",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["redact-document"]
+        },
+        "description": "Redact TFN, phone numbers, and email addresses from the document"
+      },
+      "response": []
+    },
+    {
+      "name": "Redact All Types",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to redact"
+            },
+            {
+              "key": "redaction_types",
+              "value": "tfn,phone,email,address,ssn,credit_card",
+              "type": "text",
+              "description": "Comma-separated list of data types to redact"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/redact-document",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["redact-document"]
+        },
+        "description": "Redact all supported types of sensitive data from the document"
+      },
+      "response": []
+    },
+    {
+      "name": "Debug TFN Coordinates",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to debug"
+            },
+            {
+              "key": "redaction_types",
+              "value": "tfn",
+              "type": "text",
+              "description": "Comma-separated list of data types to debug"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/debug-tfn-coordinates",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["debug-tfn-coordinates"]
+        },
+        "description": "Debug endpoint to test TFN coordinate detection"
+      },
+      "response": []
+    },
+    {
+      "name": "Debug Multiple Types",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to debug"
+            },
+            {
+              "key": "redaction_types",
+              "value": "phone,email",
+              "type": "text",
+              "description": "Comma-separated list of data types to debug"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/debug-tfn-coordinates",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["debug-tfn-coordinates"]
+        },
+        "description": "Debug endpoint to test phone and email coordinate detection"
+      },
+      "response": []
+    },
+    {
+      "name": "Extract OCR Data",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to extract OCR data from"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/extract-ocr",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["extract-ocr"]
+        },
+        "description": "Extract Azure OCR JSON data from PDF for inspection"
+      },
+      "response": []
+    },
+    {
+      "name": "Rename Document",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to rename based on content"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/rename-document",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["rename-document"]
+        },
+        "description": "Upload a PDF file to get it renamed based on its content using OpenAI"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000",
+      "type": "string"
+    }
+  ]
+}

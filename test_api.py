@@ -68,6 +68,45 @@ def test_document_rename(base_url, pdf_path):
     except Exception as e:
         print(f"❌ Document rename error: {e}")
 
+def test_document_redaction(base_url, pdf_path):
+    """Test the document redaction endpoint"""
+    print(f"\nTesting document redaction endpoint with {pdf_path}...")
+    
+    if not os.path.exists(pdf_path):
+        print(f"❌ Test PDF file not found: {pdf_path}")
+        return
+    
+    try:
+        with open(pdf_path, 'rb') as f:
+            files = {'file': (os.path.basename(pdf_path), f, 'application/pdf')}
+            response = requests.post(f"{base_url}/redact-document", files=files)
+        
+        if response.status_code == 200:
+            print("✅ Document redaction successful")
+            
+            # Save the redacted file
+            output_filename = f"redacted_{os.path.basename(pdf_path)}"
+            with open(output_filename, 'wb') as f:
+                f.write(response.content)
+            print(f"✅ Redacted file saved as: {output_filename}")
+            
+            # Check content disposition header for filename
+            content_disposition = response.headers.get('Content-Disposition', '')
+            if 'filename=' in content_disposition:
+                suggested_name = content_disposition.split('filename=')[1].strip('"')
+                print(f"📝 Suggested filename: {suggested_name}")
+                
+        elif response.status_code == 200 and 'No TFN numbers found' in response.text:
+            print("ℹ️  No TFN numbers found in the document")
+            print(f"Response: {response.json()}")
+            
+        else:
+            print(f"❌ Document redaction failed with status {response.status_code}")
+            print(f"Error: {response.text}")
+            
+    except Exception as e:
+        print(f"❌ Document redaction error: {e}")
+
 def main():
     """Main test function"""
     base_url = "http://localhost:5000"
@@ -94,11 +133,15 @@ def main():
     if len(sys.argv) > 1:
         pdf_path = sys.argv[1]
         test_document_rename(base_url, pdf_path)
+        test_document_redaction(base_url, pdf_path)
     else:
-        print("\n📝 To test document renaming, provide a PDF file path:")
+        print("\n📝 To test document processing, provide a PDF file path:")
         print("   python test_api.py path/to/your/document.pdf")
-        print("\nOr create a sample PDF and test manually using curl:")
+        print("\nOr test manually using curl:")
+        print("   # For renaming:")
         print("   curl -X POST -F 'file=@document.pdf' http://localhost:5000/rename-document -o renamed_document.pdf")
+        print("   # For redaction:")
+        print("   curl -X POST -F 'file=@document.pdf' http://localhost:5000/redact-document -o redacted_document.pdf")
 
 if __name__ == "__main__":
     main()
