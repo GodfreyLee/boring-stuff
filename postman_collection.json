@@ -1,26 +1,11 @@
 {
   "info": {
     "name": "Document Processing API",
-    "description": "API for document renaming and sensitive data redaction using Azure OCR and OpenAI",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "description": "Comprehensive API for document processing, TFN redaction, AI-powered renaming, and AI signature detection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "2.0.0"
   },
   "item": [
-    {
-      "name": "Health Check",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "http://localhost:5000/health",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "5000",
-          "path": ["health"]
-        },
-        "description": "Check if the API is running properly"
-      },
-      "response": []
-    },
     {
       "name": "API Information",
       "request": {
@@ -38,7 +23,7 @@
       "response": []
     },
     {
-      "name": "Redact TFN Only",
+      "name": "Rename Document",
       "request": {
         "method": "POST",
         "header": [],
@@ -49,13 +34,40 @@
               "key": "file",
               "type": "file",
               "src": [],
-              "description": "PDF file to redact"
+              "description": "PDF or image file to rename based on content"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/rename-document",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["rename-document"]
+        },
+        "description": "Upload a PDF or image file to get it renamed based on its content using OpenAI"
+      },
+      "response": []
+    },
+    {
+      "name": "Redact TFN",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF or image file to redact"
             },
             {
               "key": "redaction_types",
               "value": "tfn",
               "type": "text",
-              "description": "Comma-separated list of data types to redact"
+              "description": "Only TFN redaction is supported"
             }
           ]
         },
@@ -66,139 +78,7 @@
           "port": "5000",
           "path": ["redact-document"]
         },
-        "description": "Redact only Tax File Numbers (TFN) from the document"
-      },
-      "response": []
-    },
-    {
-      "name": "Redact Phone Numbers",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "file",
-              "type": "file",
-              "src": [],
-              "description": "PDF file to redact"
-            },
-            {
-              "key": "redaction_types",
-              "value": "phone",
-              "type": "text",
-              "description": "Comma-separated list of data types to redact"
-            }
-          ]
-        },
-        "url": {
-          "raw": "http://localhost:5000/redact-document",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "5000",
-          "path": ["redact-document"]
-        },
-        "description": "Redact only phone numbers from the document"
-      },
-      "response": []
-    },
-    {
-      "name": "Redact Email Addresses",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "file",
-              "type": "file",
-              "src": [],
-              "description": "PDF file to redact"
-            },
-            {
-              "key": "redaction_types",
-              "value": "email",
-              "type": "text",
-              "description": "Comma-separated list of data types to redact"
-            }
-          ]
-        },
-        "url": {
-          "raw": "http://localhost:5000/redact-document",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "5000",
-          "path": ["redact-document"]
-        },
-        "description": "Redact only email addresses from the document"
-      },
-      "response": []
-    },
-    {
-      "name": "Redact Multiple Types",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "file",
-              "type": "file",
-              "src": [],
-              "description": "PDF file to redact"
-            },
-            {
-              "key": "redaction_types",
-              "value": "tfn,phone,email",
-              "type": "text",
-              "description": "Comma-separated list of data types to redact"
-            }
-          ]
-        },
-        "url": {
-          "raw": "http://localhost:5000/redact-document",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "5000",
-          "path": ["redact-document"]
-        },
-        "description": "Redact TFN, phone numbers, and email addresses from the document"
-      },
-      "response": []
-    },
-    {
-      "name": "Redact All Types",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "file",
-              "type": "file",
-              "src": [],
-              "description": "PDF file to redact"
-            },
-            {
-              "key": "redaction_types",
-              "value": "tfn,phone,email,address,ssn,credit_card",
-              "type": "text",
-              "description": "Comma-separated list of data types to redact"
-            }
-          ]
-        },
-        "url": {
-          "raw": "http://localhost:5000/redact-document",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "5000",
-          "path": ["redact-document"]
-        },
-        "description": "Redact all supported types of sensitive data from the document"
+        "description": "Redact Tax File Numbers (TFN) from PDF or image documents"
       },
       "response": []
     },
@@ -214,13 +94,13 @@
               "key": "file",
               "type": "file",
               "src": [],
-              "description": "PDF file to debug"
+              "description": "PDF or image file to debug"
             },
             {
               "key": "redaction_types",
               "value": "tfn",
               "type": "text",
-              "description": "Comma-separated list of data types to debug"
+              "description": "Only TFN debugging is supported"
             }
           ]
         },
@@ -231,40 +111,7 @@
           "port": "5000",
           "path": ["debug-tfn-coordinates"]
         },
-        "description": "Debug endpoint to test TFN coordinate detection"
-      },
-      "response": []
-    },
-    {
-      "name": "Debug Multiple Types",
-      "request": {
-        "method": "POST",
-        "header": [],
-        "body": {
-          "mode": "formdata",
-          "formdata": [
-            {
-              "key": "file",
-              "type": "file",
-              "src": [],
-              "description": "PDF file to debug"
-            },
-            {
-              "key": "redaction_types",
-              "value": "phone,email",
-              "type": "text",
-              "description": "Comma-separated list of data types to debug"
-            }
-          ]
-        },
-        "url": {
-          "raw": "http://localhost:5000/debug-tfn-coordinates",
-          "protocol": "http",
-          "host": ["localhost"],
-          "port": "5000",
-          "path": ["debug-tfn-coordinates"]
-        },
-        "description": "Debug endpoint to test phone and email coordinate detection"
+        "description": "Debug endpoint to test TFN coordinate detection and see detailed analysis"
       },
       "response": []
     },
@@ -280,7 +127,7 @@
               "key": "file",
               "type": "file",
               "src": [],
-              "description": "PDF file to extract OCR data from"
+              "description": "PDF or image file to extract OCR data from"
             }
           ]
         },
@@ -291,12 +138,12 @@
           "port": "5000",
           "path": ["extract-ocr"]
         },
-        "description": "Extract Azure OCR JSON data from PDF for inspection"
+        "description": "Extract Azure OCR JSON data from PDF or image for inspection"
       },
       "response": []
     },
     {
-      "name": "Rename Document",
+      "name": "AI Signature Detection - Basic",
       "request": {
         "method": "POST",
         "header": [],
@@ -307,18 +154,108 @@
               "key": "file",
               "type": "file",
               "src": [],
-              "description": "PDF file to rename based on content"
+              "description": "PDF or image file to analyze for signatures using AI"
             }
           ]
         },
         "url": {
-          "raw": "http://localhost:5000/rename-document",
+          "raw": "http://localhost:5000/detect-signature-ai",
           "protocol": "http",
           "host": ["localhost"],
           "port": "5000",
-          "path": ["rename-document"]
+          "path": ["detect-signature-ai"]
         },
-        "description": "Upload a PDF file to get it renamed based on its content using OpenAI"
+        "description": "Basic AI signature detection using OpenAI Vision API with default settings"
+      },
+      "response": []
+    },
+    {
+      "name": "AI Signature Detection - Advanced",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF or image file to analyze for signatures"
+            },
+            {
+              "key": "page_number",
+              "value": "0",
+              "type": "text",
+              "description": "Page number to analyze (0-based, default: 0)"
+            },
+            {
+              "key": "image_format",
+              "value": "PNG",
+              "type": "text",
+              "description": "Image format for AI analysis: PNG or JPEG (default: PNG)"
+            },
+            {
+              "key": "quality",
+              "value": "2.0",
+              "type": "text",
+              "description": "Image quality scale 1.0-4.0 for AI analysis (default: 2.0)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/detect-signature-ai",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["detect-signature-ai"]
+        },
+        "description": "Advanced AI signature detection with customizable parameters for optimal analysis"
+      },
+      "response": []
+    },
+    {
+      "name": "AI Signature Detection - High Quality",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF or image file to analyze for signatures"
+            },
+            {
+              "key": "page_number",
+              "value": "1",
+              "type": "text",
+              "description": "Analyze page 2 (1-based display)"
+            },
+            {
+              "key": "image_format",
+              "value": "JPEG",
+              "type": "text",
+              "description": "Use JPEG format for analysis"
+            },
+            {
+              "key": "quality",
+              "value": "3.0",
+              "type": "text",
+              "description": "High quality analysis (3.0 = 216 DPI)"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://localhost:5000/detect-signature-ai",
+          "protocol": "http",
+          "host": ["localhost"],
+          "port": "5000",
+          "path": ["detect-signature-ai"]
+        },
+        "description": "High-quality AI signature detection for challenging documents"
       },
       "response": []
     }

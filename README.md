@@ -1,19 +1,14 @@
 # Document Processing API
 
-A Flask-based API that automatically renames PDF documents and redacts sensitive information based on their content using Azure OCR and OpenAI. **Now supports image files (JPG, PNG, BMP, TIFF, GIF, WEBP) with automatic conversion to PDF.**
+A comprehensive Flask-based API that provides document processing, AI-powered renaming, TFN redaction, and AI-powered signature detection. **Supports PDF and image files (JPG, PNG, BMP, TIFF, GIF, WEBP) with automatic conversion to PDF.**
 
 ## Features
 
 - **PDF Text Extraction**: Uses Azure Form Recognizer (OCR) to extract text from PDF documents
 - **Image to PDF Conversion**: Automatically converts supported image formats to PDF for processing
 - **AI-Powered Renaming**: Leverages OpenAI GPT to understand document context and generate descriptive filenames
-- **Flexible Sensitive Data Redaction**: Automatically detects and redacts multiple types of sensitive information:
-  - Tax File Numbers (TFN)
-  - Phone numbers (various formats)
-  - Email addresses
-  - Street addresses
-  - Social Security Numbers (SSN)
-  - Credit card numbers
+- **TFN Redaction**: Focused redaction of Tax File Numbers with enhanced detection
+- **AI Signature Detection**: Uses OpenAI Vision API (GPT-4o) to intelligently detect signatures in documents
 - **File Management**: Handles file uploads, processing, and returns processed files
 - **Error Handling**: Comprehensive error handling and validation
 
@@ -76,28 +71,23 @@ Upload a PDF or image file to get it renamed based on its content.
 **Response:**
 - Returns the renamed PDF file as a download
 
-#### 2. Redact Document
+#### 2. Redact Document (TFN Only)
 **POST** `/redact-document`
 
-Upload a PDF or image file to redact sensitive information from the document.
+Upload a PDF or image file to redact Tax File Numbers (TFN) from the document.
 
 **Request:**
 - Content-Type: `multipart/form-data`
 - Body: Form data with:
   - `file` field containing the PDF or image
-  - `redaction_types` field (optional) - comma-separated list of data types to redact
+  - `redaction_types` field (optional) - currently only supports `tfn`
 
 **Supported Redaction Types:**
-- `tfn` - Tax File Numbers
-- `phone` - Phone numbers (various formats)
-- `email` - Email addresses
-- `address` - Street addresses
-- `ssn` - Social Security Numbers
-- `credit_card` - Credit card numbers
+- `tfn` - Tax File Numbers (enhanced detection for various TFN field names)
 
 **Response:**
 - Returns the redacted PDF file as a download
-- If no sensitive data is found, returns a message indicating no redaction was needed
+- If no TFN data is found, returns a message indicating no redaction was needed
 
 #### 3. Extract OCR Data
 **POST** `/extract-ocr`
@@ -111,30 +101,53 @@ Upload a PDF or image file to get Azure OCR JSON data for inspection.
 **Response:**
 - Returns the raw Azure OCR JSON data
 
-#### 4. Debug Sensitive Coordinates
+#### 4. Debug TFN Coordinates
 **POST** `/debug-tfn-coordinates`
 
-Debug endpoint to test sensitive data coordinate detection.
+Debug endpoint to test TFN coordinate detection.
 
 **Request:**
 - Content-Type: `multipart/form-data`
 - Body: Form data with:
   - `file` field containing the PDF or image
-  - `redaction_types` field (optional) - comma-separated list of data types to debug
+  - `redaction_types` field (optional) - currently only supports `tfn`
 
 **Response:**
-- Returns detailed information about detected sensitive data and coordinates
+- Returns detailed information about detected TFN data and coordinates
 
-#### 5. Health Check
-**GET** `/health`
+#### 5. AI Signature Detection
+**POST** `/detect-signature-ai`
 
-Check if the API is running properly.
+Use OpenAI Vision API to intelligently detect signatures in PDF documents.
+
+**Request:**
+- Content-Type: `multipart/form-data`
+- Body: Form data with:
+  - `file` field containing the PDF or image (required)
+  - `page_number` field - page number to analyze (optional, default: 0)
+  - `image_format` field - PNG or JPEG (optional, default: PNG)
+  - `quality` field - image quality scale 1.0-4.0 (optional, default: 2.0)
 
 **Response:**
 ```json
 {
-  "status": "healthy",
-  "message": "Document renaming API is running"
+  "success": true,
+  "filename": "document.pdf",
+  "page_analyzed": 1,
+  "total_pages": 1,
+  "is_signed": true,
+  "signature_detection": {
+    "confidence": 0.95,
+    "description": "Found handwritten signature in cursive script",
+    "location": "bottom right"
+  },
+  "analysis_details": {
+    "image_format_used": "PNG",
+    "image_dimensions": {"width": 1191, "height": 1684},
+    "quality_scale": 2.0,
+    "dpi": 144,
+    "ai_model": "gpt-4o"
+  }
 }
 ```
 
@@ -142,6 +155,48 @@ Check if the API is running properly.
 **GET** `/`
 
 Get information about available endpoints.
+
+## AI Signature Detection Usage Examples
+
+### Basic Signature Detection
+```bash
+curl -X POST -F "file=@document.pdf" http://localhost:5000/detect-signature-ai
+```
+
+### Analyze Specific Page
+```bash
+curl -X POST -F "file=@document.pdf" -F "page_number=1" http://localhost:5000/detect-signature-ai
+```
+
+### High-Quality Analysis
+```bash
+curl -X POST -F "file=@document.pdf" \
+     -F "image_format=PNG" \
+     -F "quality=3.0" \
+     http://localhost:5000/detect-signature-ai
+```
+
+### Full Example with All Parameters
+```bash
+curl -X POST -F "file=@document.pdf" \
+     -F "page_number=0" \
+     -F "image_format=JPEG" \
+     -F "quality=2.5" \
+     http://localhost:5000/detect-signature-ai
+```
+
+### AI Detection Features
+✅ **Detects as signatures:**
+- Handwritten signatures (cursive or print)
+- Initials
+- Digital signatures
+- Any form of signed authorization
+
+❌ **Does NOT detect as signatures:**
+- Printed text or names
+- Stamps (unless they include handwritten signature)
+- Checkmarks or X marks in boxes
+- Form field labels
 
 ## Testing with Postman
 
@@ -395,6 +450,38 @@ Here's a sample Postman collection you can import:
             {
               "key": "redaction_types",
               "value": "phone,email",
+              "type": "text"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "AI Signature Detection",
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:5000/detect-signature-ai",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "page_number",
+              "value": "0",
+              "type": "text"
+            },
+            {
+              "key": "image_format",
+              "value": "PNG",
+              "type": "text"
+            },
+            {
+              "key": "quality",
+              "value": "2.0",
               "type": "text"
             }
           ]

@@ -3,7 +3,7 @@ import json
 import tempfile
 import shutil
 import re
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from azure.ai.formrecognizer import DocumentAnalysisClient
@@ -17,6 +17,8 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.utils import ImageReader
 import io
+import base64
+from typing import Dict, List, Tuple, Optional
 
 # Load environment variables
 load_dotenv()
@@ -1014,6 +1016,267 @@ def debug_sensitive_coordinates():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+def convert_pdf_to_image(pdf_path, page_number=0, image_format='PNG', quality=2.0):
+    """
+    Convert PDF page to image.
+    
+    Args:
+        pdf_path: Path to PDF file
+        page_number: Page number to convert (0-based)
+        image_format: Output image format (PNG, JPEG, etc.)
+        quality: Scale factor for image quality (1.0 = 72 DPI, 2.0 = 144 DPI)
+    
+    Returns:
+        Dict with image data and metadata
+    """
+    try:
+        doc = fitz.open(pdf_path)
+        
+        if page_number >= len(doc):
+            raise Exception(f"Page {page_number} does not exist. PDF has {len(doc)} pages.")
+        
+        page = doc[page_number]
+        page_rect = page.rect
+        
+        # Render page as image with specified quality
+        mat = fitz.Matrix(quality, quality)
+        pix = page.get_pixmap(matrix=mat)
+        
+        # Convert to specified format
+        if image_format.upper() == 'JPEG':
+            img_data = pix.tobytes("jpeg")
+            content_type = "image/jpeg"
+        else:  # Default to PNG
+            img_data = pix.tobytes("png")
+            content_type = "image/png"
+            image_format = "PNG"
+        
+        result = {
+            'page_number': page_number + 1,
+            'total_pages': len(doc),
+            'image_format': image_format.upper(),
+            'image_size_bytes': len(img_data),
+            'image_dimensions': {
+                'width': pix.width,
+                'height': pix.height
+            },
+            'pdf_dimensions': {
+                'width': float(page_rect.width),
+                'height': float(page_rect.height)
+            },
+            'quality_scale': quality,
+            'dpi': int(72 * quality),
+            'content_type': content_type,
+            'image_data': img_data
+        }
+        
+        doc.close()
+        return result
+        
+    except Exception as e:
+        raise Exception(f"Error converting PDF to image: {str(e)}")
+
+def detect_signature_with_openai(image_data, image_format='PNG'):
+    """
+    Use OpenAI Vision API to detect if a document image contains a signature.
+    
+    Args:
+        image_data: Binary image data
+        image_format: Image format (PNG or JPEG)
+    
+    Returns:
+        Dict with signature detection results and confidence
+    """
+    try:
+        # Encode image to base64
+        base64_image = base64.b64encode(image_data).decode('utf-8')
+        
+        # Determine MIME type
+        mime_type = f"image/{image_format.lower()}" if image_format.upper() == 'JPEG' else "image/png"
+        
+        # Create the prompt for signature detection
+        prompt = """
+        Analyze this document image and determine if it contains a signature or handwritten signature.
+        
+        Look for:
+        - Handwritten signatures (cursive or print)
+        - Initials
+        - Digital signatures
+        - Any form of signed authorization
+        
+        Consider these as NOT signatures:
+        - Printed text or names
+        - Stamps (unless they include a handwritten signature)
+        - Checkmarks or X marks in boxes
+        - Form field labels
+        
+        Respond with ONLY a JSON object in this exact format:
+        {
+            "is_signed": true/false,
+            "confidence": 0.0-1.0,
+            "signature_description": "brief description of what you found or didn't find",
+            "signature_location": "general area where signature was found (e.g., 'bottom right', 'center', 'not found')"
+        }
+        """
+        
+        # Call OpenAI Vision API
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}",
+                                "detail": "high"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=300,
+            temperature=0.1
+        )
+        
+        # Parse the response
+        response_text = response.choices[0].message.content.strip()
+        
+        # Clean up markdown code blocks if present
+        if response_text.startswith('```json'):
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+        elif response_text.startswith('```'):
+            response_text = response_text.replace('```', '').strip()
+        
+        # Try to parse JSON response
+        try:
+            import json
+            result = json.loads(response_text)
+            
+            # Validate required fields
+            required_fields = ['is_signed', 'confidence', 'signature_description', 'signature_location']
+            if not all(field in result for field in required_fields):
+                raise ValueError("Missing required fields in OpenAI response")
+            
+            # Ensure confidence is a float between 0 and 1
+            result['confidence'] = max(0.0, min(1.0, float(result['confidence'])))
+            
+            # Ensure is_signed is boolean
+            result['is_signed'] = bool(result['is_signed'])
+            
+            return result
+            
+        except (json.JSONDecodeError, ValueError, KeyError) as e:
+            print(f"Error parsing OpenAI response: {e}")
+            print(f"Raw response: {response_text}")
+            
+            # Fallback: try to determine from response text
+            response_lower = response_text.lower()
+            is_signed = any(word in response_lower for word in ['signature', 'signed', 'handwritten', 'initial'])
+            
+            return {
+                'is_signed': is_signed,
+                'confidence': 0.5,
+                'signature_description': f'Could not parse structured response: {response_text[:100]}...',
+                'signature_location': 'unknown'
+            }
+        
+    except Exception as e:
+        raise Exception(f"Error detecting signature with OpenAI: {str(e)}")
+
+@app.route('/detect-signature-ai', methods=['POST'])
+def detect_signature_ai_endpoint():
+    """
+    Endpoint to detect signatures in PDF documents using OpenAI Vision API.
+    Converts PDF to image and then uses AI to determine if the document is signed.
+    
+    Parameters:
+    - file: PDF file to analyze (required)
+    - page_number: Page number to analyze (optional, defaults to 0)
+    - image_format: Format for AI analysis PNG or JPEG (optional, defaults to PNG)
+    - quality: Image quality for AI analysis 1.0-4.0 (optional, defaults to 2.0)
+    """
+    try:
+        # Check if file is present in request
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        # Check if file is selected
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Get optional parameters
+        page_number = int(request.form.get('page_number', 0))
+        image_format = request.form.get('image_format', 'PNG').upper()
+        quality = float(request.form.get('quality', 2.0))
+        
+        # Validate parameters
+        if image_format not in ['PNG', 'JPEG']:
+            return jsonify({'error': 'Invalid image_format. Must be PNG or JPEG'}), 400
+        
+        if not (1.0 <= quality <= 4.0):
+            return jsonify({'error': 'Invalid quality. Must be between 1.0 and 4.0'}), 400
+        
+        # Process the file to ensure it's a PDF
+        original_filename = secure_filename(file.filename)
+        temp_path = os.path.join(UPLOAD_FOLDER, f"temp_{uuid.uuid4()}_{original_filename}")
+        file.save(temp_path)
+        
+        try:
+            processed_pdf_path = process_file_to_pdf(temp_path, original_filename)
+            
+            # Convert PDF to image
+            print(f"Converting PDF page {page_number + 1} to image for AI analysis...")
+            conversion_result = convert_pdf_to_image(processed_pdf_path, page_number, image_format, quality)
+            
+            # Extract image data
+            image_data = conversion_result['image_data']
+            
+            # Use OpenAI to detect signature
+            print("Analyzing image with OpenAI for signature detection...")
+            ai_result = detect_signature_with_openai(image_data, image_format)
+            
+            # Clean up temp files
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            if processed_pdf_path != temp_path and os.path.exists(processed_pdf_path):
+                os.remove(processed_pdf_path)
+            
+            # Prepare response
+            response_data = {
+                'success': True,
+                'filename': original_filename,
+                'page_analyzed': page_number + 1,
+                'total_pages': conversion_result['total_pages'],
+                'is_signed': ai_result['is_signed'],  # Main boolean result
+                'signature_detection': {
+                    'confidence': ai_result['confidence'],
+                    'description': ai_result['signature_description'],
+                    'location': ai_result['signature_location']
+                },
+                'analysis_details': {
+                    'image_format_used': conversion_result['image_format'],
+                    'image_dimensions': conversion_result['image_dimensions'],
+                    'quality_scale': conversion_result['quality_scale'],
+                    'dpi': conversion_result['dpi'],
+                    'ai_model': 'gpt-4o'
+                }
+            }
+            
+            return jsonify(response_data)
+            
+        except Exception as e:
+            # Clean up temp file if it exists
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise e
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/', methods=['GET'])
 def index():
@@ -1026,13 +1289,15 @@ def index():
             'POST /rename-document': 'Upload a PDF or image file to get it renamed based on content',
             'POST /redact-document': 'Upload a PDF or image file to redact TFN information',
             'POST /extract-ocr': 'Upload a PDF or image file to get Azure OCR JSON data',
-            'POST /debug-tfn-coordinates': 'Debug endpoint to test TFN coordinate detection'
+            'POST /pdf-to-image': 'Convert PDF pages to image files (PNG or JPEG) with customizable quality',
+            'POST /detect-signature-ai': 'Use OpenAI Vision API to detect if PDF document contains signatures (returns boolean)',
         },
         'usage': {
             'rename': 'Send a POST request to /rename-document with a PDF or image file in the "file" field',
             'redact': 'Send a POST request to /redact-document with a PDF or image file in the "file" field (only TFN redaction supported)',
             'ocr': 'Send a POST request to /extract-ocr with a PDF or image file in the "file" field',
-            'debug': 'Send a POST request to /debug-tfn-coordinates with a PDF or image file in the "file" field'
+            'pdf_to_image': 'Send a POST request to /pdf-to-image with a PDF file and optional parameters (page_number, image_format, quality, return_type)',
+            'detect_signature_ai': 'Send a POST request to /detect-signature-ai with a PDF file and optional parameters (page_number, image_format, quality)',
         },
         'supported_formats': {
             'pdf': 'PDF documents',
@@ -1043,7 +1308,12 @@ def index():
         },
         'examples': {
             'redact_pdf': 'curl -X POST -F "file=@document.pdf" http://localhost:5000/redact-document',
-            'redact_image': 'curl -X POST -F "file=@image.jpg" http://localhost:5000/redact-document'
+            'redact_image': 'curl -X POST -F "file=@image.jpg" http://localhost:5000/redact-document',
+            'pdf_to_image_basic': 'curl -X POST -F "file=@document.pdf" http://localhost:5000/pdf-to-image',
+            'pdf_to_image_with_options': 'curl -X POST -F "file=@document.pdf" -F "page_number=1" -F "image_format=JPEG" -F "quality=3.0" http://localhost:5000/pdf-to-image',
+            'pdf_to_image_metadata_only': 'curl -X POST -F "file=@document.pdf" -F "return_type=json" http://localhost:5000/pdf-to-image',
+            'detect_signature_ai_basic': 'curl -X POST -F "file=@document.pdf" http://localhost:5000/detect-signature-ai',
+            'detect_signature_ai_with_options': 'curl -X POST -F "file=@document.pdf" -F "page_number=1" -F "image_format=JPEG" -F "quality=3.0" http://localhost:5000/detect-signature-ai'
         }
     })
 
