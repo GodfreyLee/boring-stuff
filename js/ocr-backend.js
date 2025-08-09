@@ -5,7 +5,8 @@ const multer = require("multer");
 const path = require("path");
 const { processReceipt } = require("./reimburse");
 require("dotenv").config();
-
+const resumeCriteria = require('./resume_routes/resumeCriteria');
+const resumeScreening = require('./resume_routes/resumeScreening')
 const app = express();
 const port = process.env.PORT || 4000;
 
@@ -33,7 +34,9 @@ app.use((req, res, next) => {
 
 // Multer setup for file uploads
 const upload = multer({ dest: "uploads/" });
-
+//Resume URL
+app.use("/", resumeScreening)
+app.use("/", resumeCriteria.router);
 // OCR from public URL
 app.post("/ocr/url", async (req, res) => {
   const { url } = req.body;

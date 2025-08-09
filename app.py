@@ -4,6 +4,7 @@ import tempfile
 import shutil
 import re
 from flask import Flask, request, jsonify, send_file
+from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from azure.ai.formrecognizer import DocumentAnalysisClient
 from azure.core.credentials import AzureKeyCredential
@@ -21,6 +22,7 @@ import io
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app, expose_headers=['Content-Disposition'])  # Enable CORS and expose Content-Disposition header
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Configure Azure Form Recognizer
@@ -504,12 +506,20 @@ def rename_document():
             shutil.move(processed_pdf_path, new_file_path)
             
             # Step 4: Return the renamed file
-            return send_file(
+            print(f"Sending file with download_name: {new_filename}.pdf")
+            
+            # Create response with manual Content-Disposition header
+            from flask import make_response
+            response = make_response(send_file(
                 new_file_path,
                 as_attachment=True,
-                download_name=f"{new_filename}.pdf",
                 mimetype='application/pdf'
-            )
+            ))
+            
+            # Manually set the Content-Disposition header
+            response.headers['Content-Disposition'] = f'attachment; filename="{new_filename}.pdf"'
+            print(f"Response headers: {dict(response.headers)}")
+            return response
             
         except Exception as e:
             # Clean up temp file if it exists
