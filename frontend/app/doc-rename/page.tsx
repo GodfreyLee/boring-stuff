@@ -234,20 +234,36 @@ export default function DocRenamePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      {/* Retro grid pattern overlay */}
-      <div className="absolute inset-0 opacity-20">
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          "linear-gradient(135deg, #c1c1c1 0%, #a8a8a8 50%, #c1c1c1 100%)",
+      }}
+    >
+      {/* Retro CRT scanlines effect */}
+      <div className="absolute inset-0 opacity-30">
         <div
           className="h-full w-full"
           style={{
             backgroundImage: `
-            linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)
+            repeating-linear-gradient(
+              0deg,
+              transparent,
+              transparent 2px,
+              rgba(0,0,0,.1) 2px,
+              rgba(0,0,0,.1) 4px
+            ),
+            linear-gradient(rgba(128,128,128,.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(128,128,128,.05) 1px, transparent 1px)
           `,
-            backgroundSize: "50px 50px",
+            backgroundSize: "100% 4px, 40px 40px, 40px 40px",
           }}
         ></div>
       </div>
+
+      {/* Old computer monitor bezel effect */}
+      <div className="absolute inset-0 border-8 border-gray-900 shadow-inner"></div>
 
       <Navigation />
 
@@ -261,7 +277,7 @@ export default function DocRenamePage() {
           </p>
         </div>
 
-        <div className="retro-container bg-gray-800/90 backdrop-blur-sm p-8 mb-8">
+        <div className="retro-container bg-white/80 backdrop-blur-sm p-8 mb-8">
           {/* Drag and Drop Area */}
           <div
             className={`border-4 border-dashed p-8 rounded-lg text-center transition-colors ${
@@ -292,7 +308,7 @@ export default function DocRenamePage() {
               </div>
 
               <div>
-                <p className="text-xl font-minecraft text-white mb-2">
+                <p className="text-xl font-minecraft text-gray-400 mb-2">
                   {selectedFiles.length > 0
                     ? `${selectedFiles.length} PDF${
                         selectedFiles.length > 1 ? "s" : ""
