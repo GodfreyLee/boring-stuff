@@ -3,11 +3,20 @@
 import { useState, useRef } from "react";
 import Navigation from "@/components/Navigation";
 
+interface ProcessedReceipt {
+  fileName: string;
+  isValidReceipt: boolean;
+  totalAmount: string | null;
+  extractedText: string;
+  error?: string;
+  status: "pending" | "processing" | "completed" | "error";
+}
+
 export default function ReimbursePage() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [results, setResults] = useState<ProcessedReceipt[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -25,65 +34,142 @@ export default function ReimbursePage() {
     e.preventDefault();
     setIsDragging(false);
 
-    const files = e.dataTransfer.files;
-    if (files && files[0] && files[0].type === "application/pdf") {
-      setSelectedFile(files[0]);
-      setError(null);
-    } else {
-      setError("Please select a PDF file");
+    const files = Array.from(e.dataTransfer.files);
+    const pdfFiles = files.filter((file) => file.type === "application/pdf");
+
+    if (pdfFiles.length === 0) {
+      setError("Please select PDF files only");
+      return;
     }
+
+    if (pdfFiles.length !== files.length) {
+      setError("Some files were not PDFs and were skipped");
+    } else {
+      setError(null);
+    }
+
+    setSelectedFiles((prev) => [...prev, ...pdfFiles]);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files[0] && files[0].type === "application/pdf") {
-      setSelectedFile(files[0]);
-      setError(null);
-    } else {
-      setError("Please select a PDF file");
+    const files = Array.from(e.target.files || []);
+    const pdfFiles = files.filter((file) => file.type === "application/pdf");
+
+    if (pdfFiles.length === 0) {
+      setError("Please select PDF files only");
+      return;
     }
+
+    if (pdfFiles.length !== files.length) {
+      setError("Some files were not PDFs and were skipped");
+    } else {
+      setError(null);
+    }
+
+    setSelectedFiles((prev) => [...prev, ...pdfFiles]);
   };
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
 
-  const processReceipt = async () => {
-    if (!selectedFile) return;
+  const removeFile = (index: number) => {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const processReceipts = async () => {
+    if (selectedFiles.length === 0) return;
 
     setIsProcessing(true);
     setError(null);
-    setResult(null);
 
-    try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
+    // Initialize results with pending status
+    const initialResults: ProcessedReceipt[] = selectedFiles.map((file) => ({
+      fileName: file.name,
+      isValidReceipt: false,
+      totalAmount: null,
+      extractedText: "",
+      status: "pending",
+    }));
+    setResults(initialResults);
 
-      const response = await fetch("http://localhost:4000/receipt/validate", {
-        method: "POST",
-        body: formData,
-      });
+    // Process each file sequentially
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // Update status to processing
+      setResults((prev) =>
+        prev.map((result, index) =>
+          index === i ? { ...result, status: "processing" } : result
+        )
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch("http://localhost:4000/receipt/validate", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Update result
+        setResults((prev) =>
+          prev.map((result, index) =>
+            index === i
+              ? {
+                  ...result,
+                  isValidReceipt: data.isValidReceipt,
+                  totalAmount: data.totalAmount,
+                  extractedText: data.extractedText || "",
+                  status: "completed",
+                }
+              : result
+          )
+        );
+      } catch (err: any) {
+        // Update result with error
+        setResults((prev) =>
+          prev.map((result, index) =>
+            index === i
+              ? {
+                  ...result,
+                  error: err.message || "Failed to process receipt",
+                  status: "error",
+                }
+              : result
+          )
+        );
       }
-
-      const data = await response.json();
-      setResult(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to process receipt");
-    } finally {
-      setIsProcessing(false);
     }
+
+    setIsProcessing(false);
   };
 
   const resetForm = () => {
-    setSelectedFile(null);
-    setResult(null);
+    setSelectedFiles([]);
+    setResults([]);
     setError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+  };
+
+  const getTotalAmount = () => {
+    return results
+      .filter((result) => result.totalAmount)
+      .reduce((sum, result) => sum + parseFloat(result.totalAmount || "0"), 0)
+      .toFixed(2);
+  };
+
+  const getValidReceiptsCount = () => {
+    return results.filter((result) => result.isValidReceipt).length;
   };
 
   return (
@@ -104,13 +190,13 @@ export default function ReimbursePage() {
 
       <Navigation />
 
-      <main className="relative z-10 max-w-4xl mx-auto p-8">
+      <main className="relative z-10 max-w-6xl mx-auto p-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-minecraft text-white drop-shadow-lg mb-4">
-            Receipt Reimbursement
+            Batch Receipt Reimbursement
           </h1>
           <p className="text-lg font-minecraft text-gray-300">
-            Upload your receipt PDF to extract and validate reimbursement
+            Upload multiple receipt PDFs to extract and validate reimbursement
             details
           </p>
         </div>
@@ -147,12 +233,14 @@ export default function ReimbursePage() {
 
               <div>
                 <p className="text-xl font-minecraft text-white mb-2">
-                  {selectedFile
-                    ? selectedFile.name
-                    : "Drop your PDF receipt here"}
+                  {selectedFiles.length > 0
+                    ? `${selectedFiles.length} PDF${
+                        selectedFiles.length > 1 ? "s" : ""
+                      } selected`
+                    : "Drop your PDF receipts here"}
                 </p>
                 <p className="text-sm font-minecraft text-gray-400">
-                  or click the button below to browse
+                  or click the button below to browse (multiple files supported)
                 </p>
               </div>
             </div>
@@ -168,13 +256,13 @@ export default function ReimbursePage() {
               📁 Browse Files
             </button>
 
-            {selectedFile && (
+            {selectedFiles.length > 0 && (
               <button
                 onClick={resetForm}
                 className="retro-btn retro-btn-warning px-4 py-3 font-minecraft"
                 disabled={isProcessing}
               >
-                🗑️ Clear
+                🗑️ Clear All
               </button>
             )}
           </div>
@@ -184,21 +272,54 @@ export default function ReimbursePage() {
             ref={fileInputRef}
             type="file"
             accept="application/pdf"
+            multiple
             onChange={handleFileSelect}
             className="hidden"
           />
 
+          {/* Selected Files List */}
+          {selectedFiles.length > 0 && (
+            <div className="retro-container bg-gray-700/50 p-4 mb-6">
+              <h3 className="font-minecraft text-yellow-300 mb-3">
+                Selected Files:
+              </h3>
+              <div className="space-y-2">
+                {selectedFiles.map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-gray-600/50 p-2 rounded"
+                  >
+                    <span className="font-minecraft text-white text-sm">
+                      {file.name}
+                    </span>
+                    <button
+                      onClick={() => removeFile(index)}
+                      className="retro-btn retro-btn-warning px-2 py-1 text-xs font-minecraft"
+                      disabled={isProcessing}
+                    >
+                      ❌
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Process Button */}
-          {selectedFile && (
+          {selectedFiles.length > 0 && (
             <div className="text-center mb-6">
               <button
-                onClick={processReceipt}
+                onClick={processReceipts}
                 disabled={isProcessing}
                 className={`retro-btn retro-btn-primary px-8 py-4 text-lg font-minecraft ${
                   isProcessing ? "opacity-50 cursor-not-allowed" : ""
                 }`}
               >
-                {isProcessing ? "⏳ Processing..." : "🔍 Process Receipt"}
+                {isProcessing
+                  ? "⏳ Processing..."
+                  : `🔍 Process ${selectedFiles.length} Receipt${
+                      selectedFiles.length > 1 ? "s" : ""
+                    }`}
               </button>
             </div>
           )}
@@ -213,51 +334,139 @@ export default function ReimbursePage() {
             </div>
           )}
 
-          {/* Results Display */}
-          {result && (
-            <div className="space-y-4">
-              <div className="retro-container bg-green-900/80 border-4 border-green-500 p-6">
-                <h3 className="text-2xl font-minecraft text-green-200 mb-4">
-                  ✅ Receipt Analysis Complete
-                </h3>
+          {/* Results Summary */}
+          {results.length > 0 && (
+            <div className="retro-container bg-blue-900/80 border-4 border-blue-500 p-6 mb-6">
+              <h3 className="text-2xl font-minecraft text-blue-200 mb-4">
+                📊 Batch Processing Summary
+              </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="retro-container bg-gray-700/50 p-4">
-                    <h4 className="font-minecraft text-yellow-300 mb-2">
-                      Status
-                    </h4>
-                    <p className="font-minecraft text-white">
-                      {result.isValidReceipt
-                        ? "✅ Valid Receipt"
-                        : "❌ Invalid Receipt"}
-                    </p>
-                  </div>
-
-                  <div className="retro-container bg-gray-700/50 p-4">
-                    <h4 className="font-minecraft text-yellow-300 mb-2">
-                      Total Amount
-                    </h4>
-                    <p className="font-minecraft text-white text-xl">
-                      {result.totalAmount
-                        ? `$${result.totalAmount}`
-                        : "Not detected"}
-                    </p>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div className="retro-container bg-gray-700/50 p-4 text-center">
+                  <h4 className="font-minecraft text-yellow-300 mb-2">
+                    Total Files
+                  </h4>
+                  <p className="font-minecraft text-white text-2xl">
+                    {results.length}
+                  </p>
                 </div>
 
-                {result.extractedText && (
-                  <div className="retro-container bg-gray-700/50 p-4 mt-4">
-                    <h4 className="font-minecraft text-yellow-300 mb-2">
-                      Extracted Text
+                <div className="retro-container bg-gray-700/50 p-4 text-center">
+                  <h4 className="font-minecraft text-yellow-300 mb-2">
+                    Valid Receipts
+                  </h4>
+                  <p className="font-minecraft text-white text-2xl">
+                    {getValidReceiptsCount()}
+                  </p>
+                </div>
+
+                <div className="retro-container bg-gray-700/50 p-4 text-center">
+                  <h4 className="font-minecraft text-yellow-300 mb-2">
+                    Total Amount
+                  </h4>
+                  <p className="font-minecraft text-white text-2xl">
+                    ${getTotalAmount()}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Individual Results */}
+          {results.length > 0 && (
+            <div className="space-y-4">
+              <h3 className="text-xl font-minecraft text-white mb-4">
+                📋 Individual Results:
+              </h3>
+              {results.map((result, index) => (
+                <div
+                  key={index}
+                  className={`retro-container border-4 p-4 ${
+                    result.status === "completed" && result.isValidReceipt
+                      ? "bg-green-900/80 border-green-500"
+                      : result.status === "error"
+                      ? "bg-red-900/80 border-red-500"
+                      : result.status === "processing"
+                      ? "bg-yellow-900/80 border-yellow-500"
+                      : "bg-gray-700/80 border-gray-500"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-minecraft text-white text-lg">
+                      {result.fileName}
                     </h4>
-                    <div className="max-h-40 overflow-y-auto">
-                      <pre className="font-minecraft text-gray-300 text-xs whitespace-pre-wrap">
-                        {result.extractedText}
-                      </pre>
+                    <div className="flex items-center space-x-2">
+                      {result.status === "pending" && (
+                        <span className="font-minecraft text-gray-300">
+                          ⏳ Pending
+                        </span>
+                      )}
+                      {result.status === "processing" && (
+                        <span className="font-minecraft text-yellow-300">
+                          🔄 Processing...
+                        </span>
+                      )}
+                      {result.status === "completed" && (
+                        <span className="font-minecraft text-green-300">
+                          ✅ Completed
+                        </span>
+                      )}
+                      {result.status === "error" && (
+                        <span className="font-minecraft text-red-300">
+                          ❌ Error
+                        </span>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
+
+                  {result.status === "completed" && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="retro-container bg-gray-700/50 p-3">
+                        <h5 className="font-minecraft text-yellow-300 mb-1">
+                          Status
+                        </h5>
+                        <p className="font-minecraft text-white">
+                          {result.isValidReceipt
+                            ? "✅ Valid Receipt"
+                            : "❌ Invalid Receipt"}
+                        </p>
+                      </div>
+
+                      <div className="retro-container bg-gray-700/50 p-3">
+                        <h5 className="font-minecraft text-yellow-300 mb-1">
+                          Amount
+                        </h5>
+                        <p className="font-minecraft text-white">
+                          {result.totalAmount
+                            ? `$${result.totalAmount}`
+                            : "Not detected"}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {result.error && (
+                    <div className="mt-3">
+                      <p className="font-minecraft text-red-300">
+                        {result.error}
+                      </p>
+                    </div>
+                  )}
+
+                  {result.extractedText && result.status === "completed" && (
+                    <details className="mt-3">
+                      <summary className="font-minecraft text-yellow-300 cursor-pointer hover:text-yellow-200">
+                        View Extracted Text
+                      </summary>
+                      <div className="retro-container bg-gray-700/50 p-3 mt-2 max-h-32 overflow-y-auto">
+                        <pre className="font-minecraft text-gray-300 text-xs whitespace-pre-wrap">
+                          {result.extractedText}
+                        </pre>
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -158,7 +158,7 @@ Analyze the following text extracted from a document and determine:
 2. If yes, what is the total amount?
 
 Rules:
-- Return only a number (the total amount) if it's a valid receipt
+- Return only a number (the total amount) if it's a valid receipt, don't include dollar sign
 - Return -1 if it's not a valid receipt
 - Look for keywords like: total, amount due, subtotal, grand total, etc.
 - A valid receipt should have merchant info, items/services, and a total amount
