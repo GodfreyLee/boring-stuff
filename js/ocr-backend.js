@@ -7,7 +7,7 @@ const { processReceipt } = require("./reimburse");
 require("dotenv").config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 4000;
 
 // Replace with your Azure endpoint and key
 const endpoint = process.env.AZURE_ENDPOINT;
@@ -15,6 +15,21 @@ const apiKey = process.env.AZURE_API_KEY;
 const apiVersion = "2024-11-30";
 
 app.use(express.json());
+
+// CORS middleware to allow frontend connections
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  if (req.method === "OPTIONS") {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
 
 // Multer setup for file uploads
 const upload = multer({ dest: "uploads/" });
