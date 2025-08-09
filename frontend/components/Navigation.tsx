@@ -32,6 +32,13 @@ export default function Navigation() {
                 Reimburse
               </Link>
               <Link
+                href="/doc-split"
+                className="px-4 py-2 text-sm font-minecraft text-white hover:bg-gray-600 transition-colors border border-gray-500"
+                style={{ backgroundColor: "gray" }}
+              >
+                Doc Split
+              </Link>
+              <Link
                 href="/doc-rename"
                 className="px-4 py-2 text-sm font-minecraft text-white hover:bg-gray-600 transition-colors border border-gray-500"
                 style={{ backgroundColor: "gray" }}
@@ -95,6 +102,13 @@ export default function Navigation() {
             style={{ backgroundColor: "gray" }}
           >
             Reimburse
+          </Link>
+          <Link
+            href="/doc-split"
+            className="block px-3 py-2 text-base font-minecraft w-full text-left text-white border border-gray-500"
+            style={{ backgroundColor: "gray" }}
+          >
+            Doc Split
           </Link>
           <Link
             href="/doc-rename"

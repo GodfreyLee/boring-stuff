@@ -5,8 +5,13 @@ const multer = require("multer");
 const path = require("path");
 const { processReceipt } = require("./reimburse");
 require("dotenv").config();
-const resumeCriteria = require('./resume_routes/resumeCriteria');
-const resumeScreening = require('./resume_routes/resumeScreening')
+const resumeCriteria = require("./resume_routes/resumeCriteria");
+const resumeScreening = require("./resume_routes/resumeScreening");
+const {
+  processDocumentSplit,
+  findGroupedFile,
+  cleanupOldFiles,
+} = require("./doc-split");
 const app = express();
 const port = process.env.PORT || 4000;
 
@@ -35,8 +40,30 @@ app.use((req, res, next) => {
 // Multer setup for file uploads
 const upload = multer({ dest: "uploads/" });
 //Resume URL
-app.use("/", resumeScreening)
+app.use("/", resumeScreening);
 app.use("/", resumeCriteria.router);
+
+// Document splitting endpoint
+app.post("/document/split", upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  try {
+    const result = await processDocumentSplit(req.file);
+
+    // Clean up uploaded file
+    fs.unlinkSync(req.file.path);
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error in document splitting:", error);
+
+    // Clean up on error
+    if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // OCR from public URL
 app.post("/ocr/url", async (req, res) => {
   const { url } = req.body;
@@ -139,6 +166,33 @@ async function pollResult(operationLocation) {
     await new Promise((r) => setTimeout(r, 1000));
   }
 }
+
+// Endpoint to download grouped files
+app.get("/document/download/:filename", (req, res) => {
+  const filename = req.params.filename;
+  const filePath = findGroupedFile(filename);
+
+  if (!filePath) {
+    return res.status(404).json({ error: "File not found" });
+  }
+
+  res.download(filePath, filename, (err) => {
+    if (err) {
+      console.error("Download error:", err);
+      res.status(500).json({ error: "Error downloading file" });
+    }
+  });
+});
+
+// Cleanup endpoint to remove old temp files
+app.delete("/document/cleanup", (req, res) => {
+  try {
+    const result = cleanupOldFiles();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.listen(port, () => {
   console.log(`OCR backend listening at http://localhost:${port}`);
