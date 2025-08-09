@@ -3,20 +3,19 @@
 import { useState, useRef } from "react";
 import Navigation from "@/components/Navigation";
 
-interface ProcessedReceipt {
-  fileName: string;
-  isValidReceipt: boolean;
-  totalAmount: string | null;
-  extractedText: string;
-  error?: string;
+interface RedactedDocument {
+  originalFileName: string;
+  newFileName: string;
+  downloadUrl: string;
   status: "pending" | "processing" | "completed" | "error";
+  error?: string;
 }
 
-export default function ReimbursePage() {
+export default function DocRedactPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [results, setResults] = useState<ProcessedReceipt[]>([]);
+  const [results, setResults] = useState<RedactedDocument[]>([]);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -77,18 +76,17 @@ export default function ReimbursePage() {
     setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const processReceipts = async () => {
+  const processDocuments = async () => {
     if (selectedFiles.length === 0) return;
 
     setIsProcessing(true);
     setError(null);
 
     // Initialize results with pending status
-    const initialResults: ProcessedReceipt[] = selectedFiles.map((file) => ({
-      fileName: file.name,
-      isValidReceipt: false,
-      totalAmount: null,
-      extractedText: "",
+    const initialResults: RedactedDocument[] = selectedFiles.map((file) => ({
+      originalFileName: file.name,
+      newFileName: "",
+      downloadUrl: "",
       status: "pending",
     }));
     setResults(initialResults);
@@ -108,16 +106,57 @@ export default function ReimbursePage() {
         const formData = new FormData();
         formData.append("file", file);
 
-        const response = await fetch("http://localhost:4000/receipt/validate", {
+        const response = await fetch("http://localhost:5000/redact-document", {
           method: "POST",
           body: formData,
         });
+
+        console.log("Response status:", response.status);
+        console.log("Response headers:", response.headers);
+
+        // Log all headers for debugging
+        for (let [key, value] of response.headers.entries()) {
+          console.log(`Header ${key}: ${value}`);
+        }
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const data = await response.json();
+        // Handle file download response
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+
+        // Extract new filename from Content-Disposition header if available
+        const contentDisposition = response.headers.get("Content-Disposition");
+        console.log("Content-Disposition header:", contentDisposition);
+
+        let newFileName = file.name;
+        if (contentDisposition) {
+          console.log("Found Content-Disposition header");
+
+          // Try multiple patterns for filename extraction
+          let filenameMatch = contentDisposition.match(
+            /filename\*?="?([^";\n]+)"?/
+          );
+          if (!filenameMatch) {
+            filenameMatch = contentDisposition.match(/filename\*?=([^;\n]+)/);
+          }
+
+          console.log("Filename match result:", filenameMatch);
+          if (filenameMatch) {
+            newFileName = filenameMatch[1].replace(/"/g, "").trim();
+            console.log("Extracted new filename:", newFileName);
+          }
+        } else {
+          console.log("No Content-Disposition header found, using fallback");
+          // Fallback: add "_redacted" to the original filename
+          const nameWithoutExt = file.name.replace(/\.pdf$/i, "");
+          newFileName = `${nameWithoutExt}_redacted.pdf`;
+          console.log("Fallback filename:", newFileName);
+        }
+
+        console.log("Final filename:", newFileName);
 
         // Update result
         setResults((prev) =>
@@ -125,9 +164,8 @@ export default function ReimbursePage() {
             index === i
               ? {
                   ...result,
-                  isValidReceipt: data.isValidReceipt,
-                  totalAmount: data.totalAmount,
-                  extractedText: data.extractedText || "",
+                  newFileName: newFileName,
+                  downloadUrl: downloadUrl,
                   status: "completed",
                 }
               : result
@@ -140,7 +178,7 @@ export default function ReimbursePage() {
             index === i
               ? {
                   ...result,
-                  error: err.message || "Failed to process receipt",
+                  error: err.message || "Failed to redact document",
                   status: "error",
                 }
               : result
@@ -159,17 +197,40 @@ export default function ReimbursePage() {
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+    // Clean up blob URLs
+    results.forEach((result) => {
+      if (result.downloadUrl) {
+        URL.revokeObjectURL(result.downloadUrl);
+      }
+    });
   };
 
-  const getTotalAmount = () => {
-    return results
-      .filter((result) => result.totalAmount && result.isValidReceipt)
-      .reduce((sum, result) => sum + parseFloat(result.totalAmount || "0"), 0)
-      .toFixed(2);
+  const downloadFile = (result: RedactedDocument) => {
+    if (result.downloadUrl) {
+      const link = document.createElement("a");
+      link.href = result.downloadUrl;
+      link.download = result.newFileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
-  const getValidReceiptsCount = () => {
-    return results.filter((result) => result.isValidReceipt).length;
+  const downloadAllFiles = () => {
+    const completedResults = results.filter(
+      (result) => result.status === "completed" && result.downloadUrl
+    );
+    completedResults.forEach((result) => {
+      setTimeout(() => downloadFile(result), 100); // Small delay between downloads
+    });
+  };
+
+  const getCompletedCount = () => {
+    return results.filter((result) => result.status === "completed").length;
+  };
+
+  const getErrorCount = () => {
+    return results.filter((result) => result.status === "error").length;
   };
 
   return (
@@ -209,11 +270,11 @@ export default function ReimbursePage() {
       <main className="relative z-10 max-w-6xl mx-auto p-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-minecraft text-white drop-shadow-lg mb-4">
-            Batch Receipt Reimbursement
+            Document Redactor
           </h1>
           <p className="text-lg font-minecraft text-gray-300">
-            Upload multiple receipt PDFs to extract and validate reimbursement
-            details
+            Upload PDF documents to redact them with sensitive information
+            removal
           </p>
         </div>
 
@@ -253,7 +314,7 @@ export default function ReimbursePage() {
                     ? `${selectedFiles.length} PDF${
                         selectedFiles.length > 1 ? "s" : ""
                       } selected`
-                    : "Drop your PDF receipts here"}
+                    : "Drop your PDF documents here"}
                 </p>
                 <p className="text-sm font-minecraft text-gray-400">
                   or click the button below to browse (multiple files supported)
@@ -325,7 +386,7 @@ export default function ReimbursePage() {
           {selectedFiles.length > 0 && (
             <div className="text-center mb-6">
               <button
-                onClick={processReceipts}
+                onClick={processDocuments}
                 disabled={isProcessing}
                 className={`retro-btn retro-btn-primary px-8 py-4 text-lg font-minecraft ${
                   isProcessing ? "opacity-50 cursor-not-allowed" : ""
@@ -333,28 +394,38 @@ export default function ReimbursePage() {
               >
                 {isProcessing
                   ? "⏳ Processing..."
-                  : `🔍 Process ${selectedFiles.length} Receipt${
+                  : `🔒 Redact ${selectedFiles.length} Document${
                       selectedFiles.length > 1 ? "s" : ""
                     }`}
               </button>
             </div>
           )}
 
-          {/* Error Display */}
+          {/* Error Message */}
           {error && (
-            <div className="retro-container bg-red-900/80 border-4 border-red-500 p-4 mb-6">
-              <h3 className="text-lg font-minecraft text-red-200 mb-2">
-                ❌ Error
-              </h3>
-              <p className="font-minecraft text-red-300">{error}</p>
+            <div className="bg-red-500/20 border border-red-500 p-4 rounded-lg mb-6">
+              <p className="font-minecraft text-red-300 text-sm">{error}</p>
             </div>
           )}
+        </div>
 
-          {/* Results Summary */}
-          {results.length > 0 && (
+        {/* Results */}
+        {results.length > 0 && (
+          <div className="retro-container bg-white/80 backdrop-blur-sm p-8">
+            {/* Error Display */}
+            {error && (
+              <div className="retro-container bg-red-900/80 border-4 border-red-500 p-4 mb-6">
+                <h3 className="text-lg font-minecraft text-red-200 mb-2">
+                  ❌ Error
+                </h3>
+                <p className="font-minecraft text-red-300">{error}</p>
+              </div>
+            )}
+
+            {/* Results Summary */}
             <div className="retro-container bg-blue-900/80 border-4 border-blue-500 p-6 mb-6">
               <h3 className="text-2xl font-minecraft text-blue-200 mb-4">
-                📊 Batch Processing Summary
+                📊 Redaction Summary
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -369,27 +440,37 @@ export default function ReimbursePage() {
 
                 <div className="retro-container bg-gray-700/50 p-4 text-center">
                   <h4 className="font-minecraft text-yellow-300 mb-2">
-                    Valid Receipts
+                    Successfully Redacted
                   </h4>
                   <p className="font-minecraft text-white text-2xl">
-                    {getValidReceiptsCount()}
+                    {getCompletedCount()}
                   </p>
                 </div>
 
                 <div className="retro-container bg-gray-700/50 p-4 text-center">
                   <h4 className="font-minecraft text-yellow-300 mb-2">
-                    Total Amount
+                    Errors
                   </h4>
                   <p className="font-minecraft text-white text-2xl">
-                    ${getTotalAmount()}
+                    {getErrorCount()}
                   </p>
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* Individual Results */}
-          {results.length > 0 && (
+              {/* Download All Button */}
+              {getCompletedCount() > 0 && (
+                <div className="text-center">
+                  <button
+                    onClick={downloadAllFiles}
+                    className="retro-btn retro-btn-primary px-6 py-3 font-minecraft"
+                  >
+                    💾 Download All Redacted Files
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Individual Results */}
             <div className="space-y-4">
               <h3 className="text-xl font-minecraft text-white mb-4">
                 📋 Individual Results:
@@ -398,7 +479,7 @@ export default function ReimbursePage() {
                 <div
                   key={index}
                   className={`retro-container border-4 p-4 ${
-                    result.status === "completed" && result.isValidReceipt
+                    result.status === "completed"
                       ? "bg-green-900/80 border-green-500"
                       : result.status === "error"
                       ? "bg-red-900/80 border-red-500"
@@ -408,9 +489,16 @@ export default function ReimbursePage() {
                   }`}
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-minecraft text-white text-lg">
-                      {result.fileName}
-                    </h4>
+                    <div>
+                      <h4 className="font-minecraft text-white text-lg">
+                        {result.originalFileName}
+                      </h4>
+                      {result.newFileName && (
+                        <p className="font-minecraft text-gray-300 text-sm">
+                          → {result.newFileName}
+                        </p>
+                      )}
+                    </div>
                     <div className="flex items-center space-x-2">
                       {result.status === "pending" && (
                         <span className="font-minecraft text-gray-300">
@@ -435,29 +523,14 @@ export default function ReimbursePage() {
                     </div>
                   </div>
 
-                  {result.status === "completed" && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="retro-container bg-gray-700/50 p-3">
-                        <h5 className="font-minecraft text-yellow-300 mb-1">
-                          Status
-                        </h5>
-                        <p className="font-minecraft text-white">
-                          {result.isValidReceipt
-                            ? "✅ Valid Receipt"
-                            : "❌ Invalid Receipt"}
-                        </p>
-                      </div>
-
-                      <div className="retro-container bg-gray-700/50 p-3">
-                        <h5 className="font-minecraft text-yellow-300 mb-1">
-                          Amount
-                        </h5>
-                        <p className="font-minecraft text-white">
-                          {result.totalAmount
-                            ? `$${result.totalAmount}`
-                            : "Not detected"}
-                        </p>
-                      </div>
+                  {result.status === "completed" && result.downloadUrl && (
+                    <div className="text-center">
+                      <button
+                        onClick={() => downloadFile(result)}
+                        className="retro-btn retro-btn-primary px-4 py-2 font-minecraft"
+                      >
+                        💾 Download
+                      </button>
                     </div>
                   )}
 
@@ -468,24 +541,11 @@ export default function ReimbursePage() {
                       </p>
                     </div>
                   )}
-
-                  {result.extractedText && result.status === "completed" && (
-                    <details className="mt-3">
-                      <summary className="font-minecraft text-yellow-300 cursor-pointer hover:text-yellow-200">
-                        View Extracted Text
-                      </summary>
-                      <div className="retro-container bg-gray-700/50 p-3 mt-2 max-h-32 overflow-y-auto">
-                        <pre className="font-minecraft text-gray-300 text-xs whitespace-pre-wrap">
-                          {result.extractedText}
-                        </pre>
-                      </div>
-                    </details>
-                  )}
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </main>
     </div>
   );
