@@ -210,7 +210,6 @@ JOB_CRITERIA=
             timeout: 60000
         }
     );
-    console.log(prompt);
     const content = response.data?.choices?.[0]?.message?.content;
 
     if (!content) {
@@ -292,8 +291,6 @@ async function applicantScoring(applicant, criteria) {
 
 }
 async function extractCandidateAndFilters(ocrText = "", focus = {}) {
-    console.log(Criteria);
-    console.log(ocrText);
     const prompt =
         `
     You are an information extraction engine.
@@ -302,6 +299,7 @@ async function extractCandidateAndFilters(ocrText = "", focus = {}) {
     1) Extract the applicant's name, email, phone
     1) Only extract facts explicitly present—no guessing.
     2) skills: normalize to lowercase tokens (single words or hyphenated), remove duplicates.
+    2a) For programming languages or technologies mentioned with extra words (e.g., "coding in C language", "experience with Python scripting"), extract only the core name (e.g., "c", "python").
     3) minYearsExperience: if work dates exist, estimate total full years across roles (non-overlapping) and floor to an integer; otherwise omit.
     4) location: short free-text from the resume (city/state/country if present).
     5) educationLevel: map highest level found to one of: highschool | diploma | bachelor | master | phd. Omit if unclear.
