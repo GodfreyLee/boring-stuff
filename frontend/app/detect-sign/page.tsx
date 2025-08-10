@@ -253,11 +253,11 @@ export default function DetectSignPage() {
       <main className="relative z-10 max-w-6xl mx-auto p-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-minecraft text-white drop-shadow-lg mb-4">
-            🔍 Signature Detector
+            Signature Detector
           </h1>
           <p className="text-lg font-minecraft text-gray-300">
-            Upload PDF documents to detect digital signatures using advanced AI
-            analysis. Supports multiple files for batch processing.
+            Upload PDF documents to detect signatures. Supports multiple files
+            for batch processing.
           </p>
         </div>
 
@@ -290,15 +290,22 @@ export default function DetectSignPage() {
                   />
                 </svg>
               </div>
-
               <div>
-                <h3 className="text-xl font-minecraft text-gray-700 font-bold mb-2">
-                  Drop PDF Files Here
-                </h3>
-                <p className="text-gray-600 font-minecraft mb-4">
-                  Or click browse to select multiple PDF files
+                <p className="text-xl font-minecraft text-gray-400 mb-2">
+                  Drop your PDF documents here
+                </p>
+                <p className="text-sm font-minecraft text-gray-400">
+                  or click the button below to browse (multiple files supported)
                 </p>
               </div>
+              {/* <div>
+                <h3 className="text-xl font-minecraft text-gray-400 font-bold mb-2">
+                  Drop PDF Files Here
+                </h3>
+                <p className=" text-sm text-gray-400 font-minecraft mb-4">
+                  Or click browse to select multiple PDF files
+                </p>
+              </div> */}
             </div>
           </div>
 
@@ -309,7 +316,7 @@ export default function DetectSignPage() {
               className="retro-btn retro-btn-secondary px-6 py-3 font-minecraft mr-4"
               disabled={isProcessing}
             >
-              📄 Browse PDFs
+              📁 Browse File
             </button>
 
             {selectedFiles.length > 0 && (

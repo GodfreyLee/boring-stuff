@@ -38,35 +38,35 @@ export default function Home() {
       <main className="relative z-10 flex flex-col items-center justify-center min-h-[calc(100vh-64px)] p-8">
         <div className="text-center space-y-8">
           <h1
-            className="text-6xl font-minecraft text-green-400 drop-shadow-lg filter brightness-110"
+            className="text-6xl font-minecraft text-white drop-shadow-lg filter brightness-110"
             style={{
               textShadow:
-                "0 0 10px rgba(34, 197, 94, 0.5), 0 0 20px rgba(34, 197, 94, 0.3)",
+                "0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 255, 255, 0.3)",
             }}
           >
             Boring Stuff
           </h1>
-          <p className="text-xl font-minecraft text-green-300 max-w-2xl">
+          <p className="text-xl font-minecraft text-gray-300 max-w-2xl">
             Your retro-style workspace for document management and
             reimbursements
           </p>
 
           {/* Retro-style welcome card with terminal look */}
-          <div className="retro-container bg-gray-800/80 border-4 border-green-500 backdrop-blur-sm p-8 max-w-md mx-auto mt-8">
+          <div className="retro-container bg-white/80 border-4 border-green-500 backdrop-blur-sm p-8 max-w-md mx-auto mt-8">
             <div className="border-b border-green-500 pb-2 mb-4">
               <div className="flex items-center space-x-2">
                 <div className="w-3 h-3 bg-red-500 rounded-full"></div>
                 <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                 <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <span className="text-green-400 font-minecraft text-xs ml-2">
+                <span className="text-gray-400 font-minecraft text-xs ml-2">
                   TERMINAL v1.0
                 </span>
               </div>
             </div>
-            <h2 className="text-2xl font-minecraft text-green-400 mb-4">
+            <h2 className="text-2xl font-minecraft text-gray-400 mb-4">
               &gt; Welcome!
             </h2>
-            <p className="font-minecraft text-green-300 text-sm leading-relaxed">
+            <p className="font-minecraft text-gray-400 text-sm leading-relaxed">
               &gt; Select a tool from the navigation above to get started with
               your tasks.
               <span className="animate-pulse">_</span>

@@ -211,7 +211,7 @@ export default function ResumeScreenPage() {
       <main className="relative z-10 max-w-6xl mx-auto p-8">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-minecraft text-white drop-shadow-lg mb-4">
-            📄 Resume Screening
+            Resume Screening
           </h1>
           <p className="text-lg font-minecraft text-gray-300">
             Upload a resume PDF and set criteria to score candidate
@@ -222,7 +222,7 @@ export default function ResumeScreenPage() {
         <div className="retro-container bg-white/80 backdrop-blur-sm p-8 mb-8">
           {/* Drag and Drop Area */}
           <div
-            className={`border-4 border-dashed p-8 rounded-lg text-center transition-colors mb-6 ${
+            className={`border-4 border-dashed p-8 rounded-lg text-center transition-colors ${
               isDragging
                 ? "border-yellow-400 bg-yellow-400/10"
                 : "border-gray-500 hover:border-gray-400"
@@ -248,19 +248,22 @@ export default function ResumeScreenPage() {
                   />
                 </svg>
               </div>
-
               <div>
-                <h3 className="text-xl font-minecraft text-gray-700 font-bold mb-2">
+                <p className="text-xl font-minecraft text-gray-400 mb-2">
+                  Drop your PDF documents here
+                </p>
+                <p className="text-sm font-minecraft text-gray-400">
+                  or click the button below to browse (multiple files supported)
+                </p>
+              </div>
+              {/* <div>
+                <h3 className="text-2xl font-minecraft text-gray-400 font-bold mb-2">
                   Drop Resume PDF Here
                 </h3>
-                <p className="text-gray-600 font-minecraft mb-4">
+                <p className="text-gray-400 font-minecraft mb-4">
                   Or click browse to select a PDF file
                 </p>
-                <div className="text-sm font-minecraft text-gray-500">
-                  <p className="mb-1">📋 Supported: PDF files only</p>
-                  <p>📊 Max size: 15MB</p>
-                </div>
-              </div>
+              </div> */}
             </div>
           </div>
 
@@ -271,7 +274,7 @@ export default function ResumeScreenPage() {
               className="retro-btn retro-btn-secondary px-6 py-3 font-minecraft mr-4"
               disabled={isProcessing}
             >
-              📄 Browse PDF
+              📁 Browse File
             </button>
 
             {selectedFile && (
