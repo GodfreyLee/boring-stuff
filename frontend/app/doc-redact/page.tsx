@@ -115,7 +115,7 @@ export default function DocRedactPage() {
         console.log("Response headers:", response.headers);
 
         // Log all headers for debugging
-        for (let [key, value] of response.headers.entries()) {
+        for (const [key, value] of response.headers.entries()) {
           console.log(`Header ${key}: ${value}`);
         }
 
@@ -171,14 +171,17 @@ export default function DocRedactPage() {
               : result
           )
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Update result with error
         setResults((prev) =>
           prev.map((result, index) =>
             index === i
               ? {
                   ...result,
-                  error: err.message || "Failed to redact document",
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to redact document",
                   status: "error",
                 }
               : result

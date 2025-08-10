@@ -133,14 +133,17 @@ export default function ReimbursePage() {
               : result
           )
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Update result with error
         setResults((prev) =>
           prev.map((result, index) =>
             index === i
               ? {
                   ...result,
-                  error: err.message || "Failed to process receipt",
+                  error:
+                    err instanceof Error
+                      ? err.message
+                      : "Failed to process receipt",
                   status: "error",
                 }
               : result
