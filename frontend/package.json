@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "next": "15.4.6",
+    "pdfjs-dist": "^5.4.54",
     "pixel-retroui": "^2.1.0",
     "react": "19.1.0",
     "react-dom": "19.1.0"
