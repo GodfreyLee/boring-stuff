@@ -59,6 +59,13 @@ export default function Navigation() {
               >
                 Detect Sign
               </Link>
+              <Link
+                href="/resume-screen"
+                className="px-4 py-2 text-sm font-minecraft text-white hover:bg-gray-600 transition-colors border border-gray-500"
+                style={{ backgroundColor: "gray" }}
+              >
+                Resume Screen
+              </Link>
             </div>
           </div>
 
@@ -137,6 +144,13 @@ export default function Navigation() {
             style={{ backgroundColor: "gray" }}
           >
             Detect Sign
+          </Link>
+          <Link
+            href="/resume-screen"
+            className="block px-3 py-2 text-base font-minecraft w-full text-left text-white border border-gray-500"
+            style={{ backgroundColor: "gray" }}
+          >
+            Resume Screen
           </Link>
         </div>
       </div>
