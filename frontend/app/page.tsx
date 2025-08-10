@@ -52,7 +52,7 @@ export default function Home() {
           </p>
 
           {/* Retro-style welcome card with terminal look */}
-          <div className="retro-container bg-white/80 border-4 border-green-500 backdrop-blur-sm p-8 max-w-md mx-auto mt-8">
+          <div className="retro-container bg-gray-800/80 border-4 border-green-500 backdrop-blur-sm p-8 max-w-md mx-auto mt-8">
             <div className="border-b border-green-500 pb-2 mb-4">
               <div className="flex items-center space-x-2">
                 <div className="w-3 h-3 bg-red-500 rounded-full"></div>
