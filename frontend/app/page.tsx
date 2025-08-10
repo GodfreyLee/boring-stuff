@@ -83,6 +83,15 @@ export default function Home() {
         {/* Old school decorative elements */}
         <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-gray-500 opacity-40 rotate-45"></div>
         <div className="absolute top-3/4 right-1/4 w-2 h-2 bg-gray-500 opacity-40 rotate-45"></div>
+
+        {/* Clippy floating around the screen */}
+        <div className="absolute z-20 animate-clippy-bounce">
+          <img
+            src="/clippy-windows-xp.gif"
+            alt="Clippy Assistant"
+            className="w-16 h-16 opacity-80 hover:opacity-100 transition-opacity duration-300"
+          />
+        </div>
       </main>
     </div>
   );
