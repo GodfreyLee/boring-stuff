@@ -39,10 +39,23 @@ router.get('/resume/criteria', async (req, res) => {
 
 router.post('/resume/filter', upload.single('file'), async (req, res) => {
     try {
+        if (Criteria["value"] == null) {
+            Criteria = {
+                value: {
+
+                    skills: ['node', 'docker', 'express', 'c'],
+                    minYearsExperience: 3,
+                    location: 'Brisbane',
+                    educationLevel: 'bachelor',
+                    logic: 'AND'
+                }
+            }
+        }
+
         if (!req.file) {
             return res.status(400).json({ error: 'Missing PDF file under field "file".' });
         }
-        let criteria = Criteria.value;
+
 
         // OCR 
         const opLocation = await startAnalysisBuffer(req.file.buffer, req.file.mimetype);
@@ -52,7 +65,7 @@ router.post('/resume/filter', upload.single('file'), async (req, res) => {
         const text = analyzeResult?.content || '';
 
         //Ai field extraction
-        const data = await extractCandidateAndFilters();
+        const data = await extractCandidateAndFilters(text);
 
 
         //requirement match score
@@ -176,8 +189,8 @@ async function applicantScoring(applicant, criteria) {
 
 }
 async function extractCandidateAndFilters(ocrText = "", focus = {}) {
-    console.log(openaiApiKey);
-
+    console.log(Criteria);
+    console.log(ocrText);
     const prompt =
         `
     You are an information extraction engine.
@@ -193,7 +206,7 @@ async function extractCandidateAndFilters(ocrText = "", focus = {}) {
     7) candidate: fill name/email/phone if present; omit missing fields.
     8) No commentary or extra keys—only the schema fields.
 
-    input ${ocrTest}
+    input ${ocrText}
         
     output format as a json object
     `
