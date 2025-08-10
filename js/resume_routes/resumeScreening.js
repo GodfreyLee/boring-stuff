@@ -70,8 +70,9 @@ router.post('/resume/filter', upload.single('file'), async (req, res) => {
 
         //requirement match score
         const dummyapplicant = { "candidate": { "name": "Jing Ngai Wong", "email": "gordonwong76@gmail.com", "phone": "+61 435017882" }, "skills": ["c", "c++", "c#", "python", "flutter", "java", "javascript", "typescript", "nodejs", "node-red", "react", "flask", "sql", "ms office", "bootstrap", "web application deployment on aws", "firebase", "figma"], "minYearsExperience": 1, "location": "Brisbane, Australia", "educationLevel": "master", "logic": "AND" }
-        const score = await applicantScoring(data, Criteria["value"])
-        return res.status(200).json(score);
+        //const score = await applicantScoring(data, Criteria["value"]);
+        const result = await applicantScoringPrompt(data, Criteria["value"]);
+        return res.status(200).json(result);
 
     } catch (err) {
         console.error(err);
@@ -127,6 +128,108 @@ router.get('/resume/testPrompt', async (req, res) => {
         console.log(e);
     }
 });
+async function applicantScoringPrompt(applicant, criteria) {
+    const prompt = `You are a strict evaluator. Compare an APPLICANT’s skills to a JOB CRITERIA with weights and output STRICT JSON only.
+
+### Input
+APPLICANT (JSON):
+- skills: string[]  // e.g., ["nodejs","docker","react","sql"]
+
+JOB CRITERIA (JSON):
+- skills: (string | { name: string, weight?: number, aliases?: string[] })[]
+  // Examples:
+  // ["node","docker","express"]
+  // or [{ "name": "node", "weight": 0.4, "aliases": ["nodejs","node.js"] }, { "name": "docker", "weight": 0.3 }, "express"]
+
+### Matching rules (be deterministic)
+1) Normalize all skill strings: trim, lowercase.
+2) A criterion skill S is considered matched if ANY is true:
+   a) exact match with an applicant skill;
+   b) S is in the criterion’s aliases and any alias matches an applicant skill.
+3) Do NOT infer synonyms unless provided via aliases. No semantic guessing.
+4) Treat common variations or abbreviations of the same technology as equivalent (e.g., "node" and "nodejs" are the same skill).
+5) If a criterion item is a plain string, treat it as { name: <string>, weight: null, aliases: [] }.
+6) Skills weight handling:
+   - count the number of matched skills to the criteria's skills set.
+7) Evaluate minYearsExperience:
+   - Score 1.0 if applicant meets or exceeds the requirement.
+8) Evaluate location:
+   - Score 1.0 if applicant location contains the criteria location.
+   - Score 0.0 otherwise.
+9) Evaluate educationLevel:
+   - Map to rank: highschool=1, diploma=2, bachelor=3, master=4, phd=5.
+   - Score 1.0 if applicant rank is larger or equal than criteria rank, else 0.0.
+10) Final score = weighted score of:
+    - Skills score (weight of 0.5 to total score),
+    - minYearsExperience (weight of 0.2 to total score),
+    - Location (weight of 0.15 to total score),
+    - Education level (weight of 0.15 to total score)
+    Clamp to [0,1].
+11) Provide a breakdown showing individual component scores and skill-by-skill match details.
+
+
+### Output (STRICT JSON, no prose)
+{
+  "score": number,               // float 0..1 with 3 decimals
+  "components": {
+    "skillsScore": number,
+    "experienceScore": number,
+    "locationScore": number,
+    "educationScore": number
+  },
+  "matchedSkills": string[],
+  "missingSkills": string[],
+  "breakdown": [
+    { "skill": string, "weight": number, "matched": boolean, "evidence": string | null }
+  ]
+}
+
+### Now evaluate using the following payloads:
+
+APPLICANT=
+{{APPLICANT_JSON}}
+
+JOB_CRITERIA=
+{{JOB_CRITERIA_JSON}}` // paste the prompt above
+        .replace('{{APPLICANT_JSON}}', JSON.stringify(applicant))
+        .replace('{{JOB_CRITERIA_JSON}}', JSON.stringify(criteria));
+
+    const response = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
+            temperature: 0,
+        },
+        {
+            headers: {
+                Authorization: `Bearer ${openaiApiKey}`,
+                "Content-Type": "application/json",
+
+            },
+            timeout: 60000
+        }
+    );
+    console.log(prompt);
+    const content = response.data?.choices?.[0]?.message?.content;
+
+    if (!content) {
+        console.error("No content in OpenAI response:", response.data);
+        throw new Error("Missing content in API response");
+    }
+
+    // Parse the model’s JSON string into an actual object
+    let resultObj;
+    try {
+        resultObj = JSON.parse(content.trim());
+    } catch (err) {
+        console.error("Model output was not valid JSON:", content);
+        throw err;
+    }
+
+    console.log("OpenAI JSON object:", resultObj);
+    return resultObj;
+}
 async function applicantScoring(applicant, criteria) {
     let score = 0;
     let totalPossible = 0;
