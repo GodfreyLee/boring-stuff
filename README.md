@@ -2,6 +2,37 @@
 
 A comprehensive Flask-based API that provides document processing, AI-powered renaming, TFN redaction, and AI-powered signature detection. **Supports PDF and image files (JPG, PNG, BMP, TIFF, GIF, WEBP) with automatic conversion to PDF.**
 
+## Screenshots
+
+### Home Page
+
+![Home Page](images/home-page.png)
+
+### Expense Reimbursement
+
+![Expense Reimbursement](images/reimburse.png)
+
+### Document Splitting
+
+![Document Splitting](images/doc-split.png)
+
+### Document Renaming
+
+![Document Renaming](images/doc-rename.png)
+
+### Document Redaction
+
+![Document Redaction](images/doc-redact.png)
+
+### Document Signature Detection
+
+![Signature Detection](images/detect-sign.png)
+
+### Resume Screening
+
+![Resume Screening - Page 1](images/resume-screen-1.png)
+![Resume Screening - Page 2](images/resume-screen-2.png)
+
 ## Features
 
 - **PDF Text Extraction**: Uses Azure Form Recognizer (OCR) to extract text from PDF documents
@@ -21,22 +52,26 @@ A comprehensive Flask-based API that provides document processing, AI-powered re
 ## Installation
 
 1. Clone the repository:
+
 ```bash
 git clone <repository-url>
 cd boring_stuff
 ```
 
 2. Install dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 3. Set up environment variables:
+
 ```bash
 cp env_example.txt .env
 ```
 
 Edit the `.env` file with your actual credentials:
+
 ```
 AZURE_ENDPOINT=https://your-resource-name.cognitiveservices.azure.com/
 AZURE_KEY=your_azure_key_here
@@ -56,71 +91,87 @@ The API will be available at `http://localhost:5000`
 ### API Endpoints
 
 #### 1. Rename Document
+
 **POST** `/rename-document`
 
 Upload a PDF or image file to get it renamed based on its content.
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body: Form data with `file` field containing the PDF or image
 
 **Supported Formats:**
+
 - **PDF**: `.pdf`
 - **Images**: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tiff`, `.tif`, `.gif`, `.webp`
 
 **Response:**
+
 - Returns the renamed PDF file as a download
 
 #### 2. Redact Document (TFN Only)
+
 **POST** `/redact-document`
 
 Upload a PDF or image file to redact Tax File Numbers (TFN) from the document.
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body: Form data with:
   - `file` field containing the PDF or image
   - `redaction_types` field (optional) - currently only supports `tfn`
 
 **Supported Redaction Types:**
+
 - `tfn` - Tax File Numbers (enhanced detection for various TFN field names)
 
 **Response:**
+
 - Returns the redacted PDF file as a download
 - If no TFN data is found, returns a message indicating no redaction was needed
 
 #### 3. Extract OCR Data
+
 **POST** `/extract-ocr`
 
 Upload a PDF or image file to get Azure OCR JSON data for inspection.
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body: Form data with `file` field containing the PDF or image
 
 **Response:**
+
 - Returns the raw Azure OCR JSON data
 
 #### 4. Debug TFN Coordinates
+
 **POST** `/debug-tfn-coordinates`
 
 Debug endpoint to test TFN coordinate detection.
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body: Form data with:
   - `file` field containing the PDF or image
   - `redaction_types` field (optional) - currently only supports `tfn`
 
 **Response:**
+
 - Returns detailed information about detected TFN data and coordinates
 
 #### 5. AI Signature Detection
+
 **POST** `/detect-signature-ai`
 
 Use OpenAI Vision API to intelligently detect signatures in PDF documents.
 
 **Request:**
+
 - Content-Type: `multipart/form-data`
 - Body: Form data with:
   - `file` field containing the PDF or image (required)
@@ -129,6 +180,7 @@ Use OpenAI Vision API to intelligently detect signatures in PDF documents.
   - `quality` field - image quality scale 1.0-4.0 (optional, default: 2.0)
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -143,7 +195,7 @@ Use OpenAI Vision API to intelligently detect signatures in PDF documents.
   },
   "analysis_details": {
     "image_format_used": "PNG",
-    "image_dimensions": {"width": 1191, "height": 1684},
+    "image_dimensions": { "width": 1191, "height": 1684 },
     "quality_scale": 2.0,
     "dpi": 144,
     "ai_model": "gpt-4o"
@@ -152,6 +204,7 @@ Use OpenAI Vision API to intelligently detect signatures in PDF documents.
 ```
 
 #### 6. API Information
+
 **GET** `/`
 
 Get information about available endpoints.
@@ -159,16 +212,19 @@ Get information about available endpoints.
 ## AI Signature Detection Usage Examples
 
 ### Basic Signature Detection
+
 ```bash
 curl -X POST -F "file=@document.pdf" http://localhost:5000/detect-signature-ai
 ```
 
 ### Analyze Specific Page
+
 ```bash
 curl -X POST -F "file=@document.pdf" -F "page_number=1" http://localhost:5000/detect-signature-ai
 ```
 
 ### High-Quality Analysis
+
 ```bash
 curl -X POST -F "file=@document.pdf" \
      -F "image_format=PNG" \
@@ -177,6 +233,7 @@ curl -X POST -F "file=@document.pdf" \
 ```
 
 ### Full Example with All Parameters
+
 ```bash
 curl -X POST -F "file=@document.pdf" \
      -F "page_number=0" \
@@ -186,13 +243,16 @@ curl -X POST -F "file=@document.pdf" \
 ```
 
 ### AI Detection Features
+
 ✅ **Detects as signatures:**
+
 - Handwritten signatures (cursive or print)
 - Initials
 - Digital signatures
 - Any form of signed authorization
 
 ❌ **Does NOT detect as signatures:**
+
 - Printed text or names
 - Stamps (unless they include handwritten signature)
 - Checkmarks or X marks in boxes
@@ -216,17 +276,20 @@ curl -X POST -F "file=@document.pdf" \
 #### 1. Test TFN Redaction Only
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/redact-document`
 - **Headers**: None (Postman will automatically set Content-Type for form-data)
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your PDF or image file
 - Key: `redaction_types` (Type: Text)
   - Value: `tfn`
 
 **Steps:**
+
 1. Click on the "Body" tab
 2. Select "form-data"
 3. Add the `file` key and select your PDF or image file
@@ -236,10 +299,12 @@ curl -X POST -F "file=@document.pdf" \
 #### 2. Test Multiple Data Types Redaction
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/redact-document`
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your PDF or image file
 - Key: `redaction_types` (Type: Text)
@@ -248,10 +313,12 @@ curl -X POST -F "file=@document.pdf" \
 #### 3. Test All Data Types Redaction
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/redact-document`
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your PDF or image file
 - Key: `redaction_types` (Type: Text)
@@ -262,16 +329,19 @@ curl -X POST -F "file=@document.pdf" \
 #### 1. Test Image Redaction
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/redact-document`
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your image file (JPG, PNG, etc.)
 - Key: `redaction_types` (Type: Text)
   - Value: `phone,email`
 
 **Expected Result:**
+
 - Image will be automatically converted to PDF
 - Sensitive data will be redacted
 - Redacted PDF will be returned
@@ -279,14 +349,17 @@ curl -X POST -F "file=@document.pdf" \
 #### 2. Test Image OCR Extraction
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/extract-ocr`
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your image file
 
 **Expected Result:**
+
 - Image will be converted to PDF
 - OCR data will be extracted and returned as JSON
 
@@ -295,16 +368,19 @@ curl -X POST -F "file=@document.pdf" \
 #### 1. Debug TFN Coordinates
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/debug-tfn-coordinates`
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your PDF or image file
 - Key: `redaction_types` (Type: Text)
   - Value: `tfn`
 
 **Expected Response:**
+
 ```json
 {
   "sensitive_data_found": [
@@ -332,10 +408,12 @@ curl -X POST -F "file=@document.pdf" \
 #### 2. Debug Multiple Data Types
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/debug-tfn-coordinates`
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your PDF or image file
 - Key: `redaction_types` (Type: Text)
@@ -346,22 +424,26 @@ curl -X POST -F "file=@document.pdf" \
 #### 1. Health Check
 
 **Request Setup:**
+
 - **Method**: `GET`
 - **URL**: `{{base_url}}/health`
 
 #### 2. API Information
 
 **Request Setup:**
+
 - **Method**: `GET`
 - **URL**: `{{base_url}}/`
 
 #### 3. Extract OCR Data
 
 **Request Setup:**
+
 - **Method**: `POST`
 - **URL**: `{{base_url}}/extract-ocr`
 
 **Body (form-data):**
+
 - Key: `file` (Type: File)
   - Value: Select your PDF or image file
 
@@ -517,24 +599,28 @@ Here's a sample Postman collection you can import:
 ### Common Testing Scenarios
 
 #### 1. Test with Different File Types
+
 - **PDF documents** (should work as before)
 - **JPG images** (should be converted to PDF and processed)
 - **PNG images** (should be converted to PDF and processed)
 - **Other image formats** (BMP, TIFF, GIF, WEBP)
 
 #### 2. Test with Different Content Types
+
 - **Tax documents** (should find TFNs)
 - **Contact forms** (should find phone numbers and emails)
 - **Financial documents** (should find credit card numbers)
 - **Personal information forms** (should find addresses and SSNs)
 
 #### 3. Test Error Cases
+
 - **No file provided**: Send request without file
 - **Invalid file type**: Upload unsupported file format
 - **Invalid redaction types**: Use unsupported data types
 - **Large files**: Test with files > 16MB
 
 #### 4. Test Response Handling
+
 - **Successful redaction**: Check if redacted PDF is returned
 - **No sensitive data found**: Verify appropriate message
 - **Error responses**: Check error message format
@@ -550,6 +636,7 @@ Here's a sample Postman collection you can import:
 ## How It Works
 
 ### Document Renaming
+
 1. **Upload**: PDF or image file is uploaded to the API
 2. **Conversion**: If image, convert to PDF using PIL and ReportLab
 3. **OCR**: Azure Form Recognizer extracts text from the PDF
@@ -558,6 +645,7 @@ Here's a sample Postman collection you can import:
 6. **Return**: The renamed file is returned to the user
 
 ### Document Redaction
+
 1. **Upload**: PDF or image file is uploaded to the API
 2. **Conversion**: If image, convert to PDF using PIL and ReportLab
 3. **OCR with Coordinates**: Azure Form Recognizer extracts text and coordinates from the PDF
@@ -568,6 +656,7 @@ Here's a sample Postman collection you can import:
 8. **Return**: The redacted PDF file is returned to the user
 
 ### Image to PDF Conversion
+
 1. **Image Processing**: Open image using PIL (Python Imaging Library)
 2. **Format Conversion**: Convert to RGB if necessary for compatibility
 3. **Scaling**: Calculate optimal scaling to fit image on A4 page with margins
@@ -577,6 +666,7 @@ Here's a sample Postman collection you can import:
 ## Error Handling
 
 The API includes comprehensive error handling for:
+
 - Missing or invalid files
 - Unsupported file types
 - Invalid redaction types
@@ -601,6 +691,7 @@ The API includes comprehensive error handling for:
 ## Development
 
 To run in development mode:
+
 ```bash
 python app.py
 ```
