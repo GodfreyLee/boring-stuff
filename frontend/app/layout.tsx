@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Re-imagined Work Toolbox",
+  title: "Boring Stuff",
   description: "Re-imagined Work Toolbox",
 };
 

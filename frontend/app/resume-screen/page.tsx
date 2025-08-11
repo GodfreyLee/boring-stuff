@@ -5,7 +5,20 @@ import Navigation from "@/components/Navigation";
 
 interface ResumeScreeningResult {
   score: number;
-  matched_skills: string[];
+  components: {
+    skillsScore: number;
+    experienceScore: number;
+    locationScore: number;
+    educationScore: number;
+  };
+  matchedSkills: string[];
+  missingSkills: string[];
+  breakdown: Array<{
+    skill: string;
+    weight: number;
+    matched: boolean;
+    evidence: string | null;
+  }>;
 }
 
 interface ScreeningCriteria {
@@ -114,10 +127,7 @@ export default function ResumeScreenPage() {
     setResult(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      // Add the filters as JSON string (based on the curl example in resumeScreening.js)
+      // Prepare the criteria
       const filters: ScreeningCriteria = {
         skills,
         minYearsExperience,
@@ -126,9 +136,13 @@ export default function ResumeScreenPage() {
         logic: "AND",
       };
 
+      // Use FormData to send file and criteria
+      const formData = new FormData();
+      formData.append("file", selectedFile);
       formData.append("filters", JSON.stringify(filters));
 
-      const response = await fetch("http://localhost:4000/resume/filter", {
+      // Call the combined endpoint
+      const response = await fetch("http://localhost:4000/resume/criteria", {
         method: "POST",
         body: formData,
       });
@@ -481,14 +495,50 @@ export default function ResumeScreenPage() {
               </div>
             </div>
 
+            {/* Component Scores */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="bg-gray-100 p-3 rounded-lg text-center">
+                <div className="text-2xl font-minecraft font-bold text-gray-700">
+                  {Math.round(result.components.skillsScore * 100)}%
+                </div>
+                <div className="text-sm font-minecraft text-gray-600">
+                  Skills Match
+                </div>
+              </div>
+              <div className="bg-gray-100 p-3 rounded-lg text-center">
+                <div className="text-2xl font-minecraft font-bold text-gray-700">
+                  {Math.round(result.components.experienceScore * 100)}%
+                </div>
+                <div className="text-sm font-minecraft text-gray-600">
+                  Experience
+                </div>
+              </div>
+              <div className="bg-gray-100 p-3 rounded-lg text-center">
+                <div className="text-2xl font-minecraft font-bold text-gray-700">
+                  {Math.round(result.components.locationScore * 100)}%
+                </div>
+                <div className="text-sm font-minecraft text-gray-600">
+                  Location
+                </div>
+              </div>
+              <div className="bg-gray-100 p-3 rounded-lg text-center">
+                <div className="text-2xl font-minecraft font-bold text-gray-700">
+                  {Math.round(result.components.educationScore * 100)}%
+                </div>
+                <div className="text-sm font-minecraft text-gray-600">
+                  Education
+                </div>
+              </div>
+            </div>
+
             {/* Matched Skills */}
             <div className="mb-6">
               <h4 className="text-lg font-minecraft text-gray-700 font-bold mb-3">
-                Matched Criteria:
+                Matched Skills:
               </h4>
               <div className="flex flex-wrap gap-2">
-                {result.matched_skills.length > 0 ? (
-                  result.matched_skills.map((skill, index) => (
+                {result.matchedSkills.length > 0 ? (
+                  result.matchedSkills.map((skill: string, index: number) => (
                     <span
                       key={index}
                       className="inline-flex items-center px-3 py-1 rounded-full text-sm font-minecraft bg-green-100 text-green-800"
@@ -498,11 +548,69 @@ export default function ResumeScreenPage() {
                   ))
                 ) : (
                   <span className="font-minecraft text-gray-500 text-sm">
-                    No matching criteria found
+                    No matching skills found
                   </span>
                 )}
               </div>
             </div>
+
+            {/* Missing Skills */}
+            {result.missingSkills.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-minecraft text-gray-700 font-bold mb-3">
+                  Missing Skills:
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {result.missingSkills.map((skill: string, index: number) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-3 py-1 rounded-full text-sm font-minecraft bg-red-100 text-red-800"
+                    >
+                      ✗ {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Detailed Breakdown */}
+            {result.breakdown.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-minecraft text-gray-700 font-bold mb-3">
+                  Detailed Breakdown:
+                </h4>
+                <div className="space-y-2">
+                  {result.breakdown.map((item, index: number) => (
+                    <div key={index} className="bg-gray-100 p-3 rounded-lg">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-minecraft text-gray-800">
+                          {item.skill}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-minecraft text-gray-600">
+                            Weight: {item.weight}%
+                          </span>
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-minecraft ${
+                              item.matched
+                                ? "bg-green-200 text-green-800"
+                                : "bg-red-200 text-red-800"
+                            }`}
+                          >
+                            {item.matched ? "✓ Matched" : "✗ Missing"}
+                          </span>
+                        </div>
+                      </div>
+                      {item.evidence && (
+                        <p className="text-sm font-minecraft text-gray-600 italic">
+                          Evidence: {item.evidence}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Reset Button */}
             <div className="text-center">
